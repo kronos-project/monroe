@@ -1,0 +1,12 @@
+[package]
+name = "monroe"
+version = "0.1.0"
+authors = ["Valentin B. <valentin.be@protonmail.com>"]
+description = "An asynchronous actor model implementation based on tokio"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/kronos-project/monroe.git"
+categories = ["network-programming", "asynchronous"]
+keywords = ["actor", "library", "async", "futures", "tokio"]
+edition = "2021"
+
+[dependencies]
