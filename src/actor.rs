@@ -1,5 +1,7 @@
 use std::future::Future;
 
+use crate::Context;
+
 // TODO: Actor context.
 // TODO: Supervision.
 
@@ -18,7 +20,7 @@ pub trait Actor: Sized + Send + 'static {
     /// During the execution of this method, no messages will
     /// be processed yet. Should be used for initialization
     /// work.
-    fn starting(&mut self) -> Self::StartingFuture<'_>;
+    fn starting(&mut self, ctx: &mut Context<Self>) -> Self::StartingFuture<'_>;
 
     /// Called when an actor has been permanently stopped.
     ///
@@ -89,6 +91,6 @@ pub trait Handler<M: Message>: Actor {
     ///
     /// The handler must produce a [`Message::Result`] value which
     /// will eventually be passed back to the issuer of the message.
-    // TODO: Context argument?
-    fn handle(&mut self, message: M) -> Self::HandleFuture<'_>;
+    // TODO: Write about the context's role.
+    fn handle(&mut self, message: M, ctx: &mut Context<Self>) -> Self::HandleFuture<'_>;
 }
