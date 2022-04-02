@@ -1,8 +1,8 @@
 use std::marker::PhantomData;
 
 use futures_core::future::LocalBoxFuture;
-use tokio::sync::oneshot;
 
+use super::OneshotSender;
 use crate::{Actor, Context, Handler, Message};
 
 /// A crate-internal helper trait for erasing different envelope
@@ -66,13 +66,13 @@ impl<A: Actor + Handler<M>, M: Message> EnvelopeProxy for ForgettingEnvelope<A, 
 /// a oneshot channel.
 pub struct ReturningEnvelope<A, M: Message> {
     message: M,
-    tx: oneshot::Sender<M::Result>,
+    tx: OneshotSender<M::Result>,
 
     _a: PhantomData<fn() -> A>,
 }
 
 impl<A: Actor + Handler<M>, M: Message> ReturningEnvelope<A, M> {
-    pub fn new(message: M, tx: oneshot::Sender<M::Result>) -> Self {
+    pub fn new(message: M, tx: OneshotSender<M::Result>) -> Self {
         Self {
             message,
             tx,
