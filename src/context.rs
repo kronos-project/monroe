@@ -38,10 +38,7 @@ impl ActorState {
     /// and [`ActorState::Operating`].
     pub fn alive(&self) -> bool {
         use ActorState::*;
-        match self {
-            Starting | Operating => true,
-            _ => false,
-        }
+        matches!(self, Starting | Operating)
     }
 }
 
@@ -56,8 +53,8 @@ fn next_actor_id() -> u64 {
 
 /// TODO
 pub struct Context<A: Actor> {
-    state: ActorState,
     id: u64,
+    state: ActorState,
 
     // TODO: Only to satisfy the requirement for generic use.
     //       Remove when no longer needed.

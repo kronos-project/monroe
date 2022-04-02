@@ -10,3 +10,5 @@ keywords = ["actor", "library", "async", "futures", "tokio"]
 edition = "2021"
 
 [dependencies]
+futures-core = "0.3"
+tokio = { version = "1", features = ["sync"] }
