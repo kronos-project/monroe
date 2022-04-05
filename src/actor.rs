@@ -45,9 +45,9 @@ pub trait Actor: Sized + Send + 'static {
 ///   response will be awaited. This can potentially cause deadlocks
 ///   when actors *ask* each other in a cyclic relationship.
 ///
-/// - **request**: In this mode, a message will be sent to an actor
-///   similarly to the *tell* strategy. But instead of just discarding,
-///   the [`Message::Result`] produced by that actor will be scheduled
+/// - **request**: A message will be sent to an actor similarly to
+///   the *tell* strategy. But instead of just discarding, the
+///   [`Message::Result`] produced by that actor will be scheduled
 ///   as a distinct [`Message`] to the requesting [`Actor`] at a later
 ///   point in the future.
 ///
