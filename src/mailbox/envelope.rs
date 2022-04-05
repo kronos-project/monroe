@@ -30,15 +30,13 @@ pub trait EnvelopeProxy {
 /// A fire-and-forget envelope for implementing the *tell* strategy.
 pub struct ForgettingEnvelope<A, M> {
     message: M,
-
     _a: PhantomData<fn() -> A>,
 }
 
-impl<A: Actor + Handler<M>, M: Message> ForgettingEnvelope<A, M> {
+impl<A, M: Message> ForgettingEnvelope<A, M> {
     pub fn new(message: M) -> Self {
         Self {
             message,
-
             _a: PhantomData,
         }
     }
@@ -67,16 +65,14 @@ impl<A: Actor + Handler<M>, M: Message> EnvelopeProxy for ForgettingEnvelope<A, 
 pub struct ReturningEnvelope<A, M: Message> {
     message: M,
     tx: OneshotSender<M::Result>,
-
     _a: PhantomData<fn() -> A>,
 }
 
-impl<A: Actor + Handler<M>, M: Message> ReturningEnvelope<A, M> {
+impl<A, M: Message> ReturningEnvelope<A, M> {
     pub fn new(message: M, tx: OneshotSender<M::Result>) -> Self {
         Self {
             message,
             tx,
-
             _a: PhantomData,
         }
     }
