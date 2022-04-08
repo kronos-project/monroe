@@ -107,6 +107,11 @@ impl<T> Sender<T> {
             hook: Some(SendState::NotYetSent(msg)),
         }
     }
+
+    /// Returns true if all receivers for this channel have been dropped.
+    pub fn is_disconnected(&self) -> bool {
+        self.shared.is_disconnected()
+    }
 }
 
 impl<T> Clone for Sender<T> {
