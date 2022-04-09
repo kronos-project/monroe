@@ -16,7 +16,7 @@ use std::{
     pin::Pin,
     sync::{
         atomic::{AtomicBool, AtomicUsize, Ordering},
-        Arc, Mutex, MutexGuard,
+        Arc, Mutex, MutexGuard, Weak,
     },
     task::{Context, Poll},
     time::Instant,
@@ -112,6 +112,12 @@ impl<T> Sender<T> {
     pub fn is_disconnected(&self) -> bool {
         self.shared.is_disconnected()
     }
+
+    pub fn downgrade(&self) -> WeakSender<T> {
+        WeakSender {
+            shared: Arc::downgrade(&self.shared),
+        }
+    }
 }
 
 impl<T> Clone for Sender<T> {
@@ -137,6 +143,33 @@ impl<T> Drop for Sender<T> {
         if self.shared.sender_count.fetch_sub(1, Ordering::Relaxed) == 1 {
             self.shared.disconnect_all();
         }
+    }
+}
+
+pub struct WeakSender<T> {
+    shared: Weak<Shared<T>>,
+}
+
+impl<T> WeakSender<T> {
+    pub fn upgrade(&self) -> Option<Sender<T>> {
+        self.shared.upgrade().map(|shared| {
+            shared.sender_count.fetch_add(1, Ordering::Relaxed);
+            Sender { shared }
+        })
+    }
+}
+
+impl<T> Clone for WeakSender<T> {
+    fn clone(&self) -> Self {
+        Self {
+            shared: self.shared.clone(),
+        }
+    }
+}
+
+impl<T> fmt::Debug for WeakSender<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("WeakSender").finish()
     }
 }
 

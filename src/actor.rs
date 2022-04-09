@@ -35,7 +35,7 @@ pub trait Actor: Sized + Send + 'static {
 /// implementation of the corresponding [`Handler`] trait.
 ///
 /// Generally, monroe features 3 ways of message passing out of the
-/// box through <TODO: Quote actor reference type here>:
+/// box through [`Address`][crate::Address]:
 ///
 /// - **tell**: A message will be sent to an actor without waiting
 ///   for its response. This will return immediately and can never

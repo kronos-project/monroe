@@ -1,6 +1,7 @@
-use std::sync::{Arc, Weak};
-
-use crate::{mailbox::MailboxSender, Actor};
+use crate::{
+    mailbox::{MailboxSender, WeakMailboxSender},
+    Actor,
+};
 
 /// A strong reference to an [`Actor`].
 ///
@@ -22,11 +23,15 @@ use crate::{mailbox::MailboxSender, Actor};
 /// running -- it may still crash or terminate due to its own
 /// circumstances, which makes the methods for communicating
 /// with the actor fallible.
-// TODO: Explain how actors can get handles to themselves through Context when possible.
+///
+/// When an [`Actor`] handles a message, [`Context::address`]
+/// allows an actor to retrieve its own reference.
+///
+/// [`Context::address`]: crate::Context::address
 #[derive(Debug)]
 pub struct Address<A: Actor> {
     id: u64,
-    tx: Arc<MailboxSender<A>>,
+    tx: MailboxSender<A>,
 }
 
 /// A weak reference to an [`Actor`].
@@ -48,10 +53,14 @@ pub struct Address<A: Actor> {
 #[derive(Debug)]
 pub struct WeakAddress<A: Actor> {
     id: u64,
-    tx: Weak<MailboxSender<A>>,
+    tx: WeakMailboxSender<A>,
 }
 
 impl<A: Actor> Address<A> {
+    pub(crate) fn new(id: u64, tx: MailboxSender<A>) -> Self {
+        Self { id, tx }
+    }
+
     /// Gets the unique, numeric identifier associated with the
     /// actor referenced by this address.
     ///
@@ -68,7 +77,7 @@ impl<A: Actor> Address<A> {
     pub fn downgrade(&self) -> WeakAddress<A> {
         WeakAddress {
             id: self.id,
-            tx: Arc::downgrade(&self.tx),
+            tx: self.tx.downgrade(),
         }
     }
 
@@ -110,7 +119,7 @@ impl<A: Actor> Clone for Address<A> {
     fn clone(&self) -> Self {
         Self {
             id: self.id,
-            tx: Arc::clone(&self.tx),
+            tx: self.tx.clone(),
         }
     }
 }
@@ -119,7 +128,7 @@ impl<A: Actor> Clone for WeakAddress<A> {
     fn clone(&self) -> Self {
         Self {
             id: self.id,
-            tx: Weak::clone(&self.tx),
+            tx: self.tx.clone(),
         }
     }
 }

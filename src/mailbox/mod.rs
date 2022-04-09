@@ -17,6 +17,7 @@ mod channel;
 pub type Letter<A> = Box<dyn EnvelopeProxy<Actor = A>>;
 
 pub type MailboxSender<A> = channel::Sender<Letter<A>>;
+pub type WeakMailboxSender<A> = channel::WeakSender<Letter<A>>;
 pub type MailboxReceiver<A> = channel::Receiver<Letter<A>>;
 
 pub type OneshotSender<T> = tokio::sync::oneshot::Sender<T>;

@@ -1,9 +1,6 @@
-use std::{
-    marker::PhantomData,
-    sync::atomic::{AtomicU64, Ordering},
-};
+use std::sync::atomic::{AtomicU64, Ordering};
 
-use crate::Actor;
+use crate::{mailbox::MailboxReceiver, Actor, Address};
 
 /// The current execution state of an actor.
 ///
@@ -52,13 +49,11 @@ fn next_actor_id() -> u64 {
 }
 
 /// TODO
+#[derive(Debug)]
 pub struct Context<A: Actor> {
     id: u64,
     state: ActorState,
-
-    // TODO: Only to satisfy the requirement for generic use.
-    //       Remove when no longer needed.
-    _a: PhantomData<A>,
+    mailbox: MailboxReceiver<A>,
 }
 
 impl<A: Actor> Context<A> {
@@ -90,7 +85,15 @@ impl<A: Actor> Context<A> {
         self.state = ActorState::Stopping;
     }
 
-    // TODO: Method for getting a handle to an actor.
+    /// Gets a strong [`Address`] of the actor that is governed by
+    /// this context.
+    ///
+    /// This allows an actor to retrieve shareable references to
+    /// itself during message processing.
+    pub fn address(&self) -> Address<A> {
+        Address::new(self.id, self.mailbox.create_sender())
+    }
+
     // TODO: Support for scheduling messages to the actor.
     // TODO: Streams?
 }
