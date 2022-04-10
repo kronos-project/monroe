@@ -8,12 +8,12 @@ use crate::Context;
 /// TODO
 pub trait Actor: Sized + Send + 'static {
     /// The [`Future`] type produced by [`Actor::starting`].
-    type StartingFuture<'a>: Future<Output = ()> + 'a
+    type StartingFuture<'a>: Future<Output = ()> + Send + 'a
     where
         Self: 'a;
 
     /// The [`Future`] type produced by [`Actor::stopped`].
-    type StoppedFuture: Future<Output = ()>;
+    type StoppedFuture: Future<Output = ()> + Send;
 
     /// Called when an actor is in the process of starting up.
     ///
@@ -78,7 +78,7 @@ pub trait Message: Send + 'static {
 /// types.
 pub trait Handler<M: Message>: Actor {
     /// The [`Future`] type produced by [`Handler::handle`].
-    type HandleFuture<'a>: Future<Output = M::Result> + 'a
+    type HandleFuture<'a>: Future<Output = M::Result> + Send + 'a
     where
         Self: 'a,
         M: 'a;

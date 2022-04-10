@@ -1,5 +1,7 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use tokio::task::JoinHandle;
+
 use crate::{mailbox::MailboxReceiver, Actor, Address};
 
 /// The current execution state of an actor.
@@ -11,9 +13,10 @@ pub enum ActorState {
     /// The actor is currently in the process of starting up.
     ///
     /// No messages will be processed until the actor enters
-    /// [`ActorState::Operating`].
+    /// [`ActorState::Operating`] after successful invocation
+    /// of [`Actor::starting`].
     Starting,
-    /// The actor is running and actively processes messages.
+    /// The actor is running and actively processing messages.
     Operating,
     /// The actor is in the process of stopping.
     ///
@@ -37,6 +40,15 @@ impl ActorState {
         use ActorState::*;
         matches!(self, Starting | Operating)
     }
+
+    /// Indicates whether the actor is currently shutting down.
+    ///
+    /// This state is the result of an invocation of
+    /// [`Context::stop`] and the actor will not accept any more
+    /// messages unless it is restarted.
+    pub fn stopping(&self) -> bool {
+        matches!(self, ActorState::Stopping)
+    }
 }
 
 // We assume that no reasonable workload will spawn enough actors
@@ -57,6 +69,14 @@ pub struct Context<A: Actor> {
 }
 
 impl<A: Actor> Context<A> {
+    pub(crate) fn new(mailbox: MailboxReceiver<A>) -> Self {
+        Self {
+            id: next_actor_id(),
+            state: ActorState::Starting,
+            mailbox,
+        }
+    }
+
     /// Gets the current [`ActorState`] of the actor governed
     /// by this context.
     ///
@@ -92,6 +112,39 @@ impl<A: Actor> Context<A> {
     /// itself during message processing.
     pub fn address(&self) -> Address<A> {
         Address::new(self.id, self.mailbox.create_sender())
+    }
+
+    /// Executes the given [`Actor`] object in this context.
+    pub(crate) fn run(mut self, mut actor: A) -> JoinHandle<()> {
+        // TODO: Runtime abstraction for spawn calls?
+        // TODO: Supervision for handling stopped actors.
+        tokio::spawn(async move {
+            // Initialize the actor before processing any messages.
+            // TODO: Panic safety.
+            actor.starting(&mut self).await;
+
+            // The actor is now considered running, if not already stopped.
+            if self.state.stopping() {
+                todo!()
+            }
+            self.state = ActorState::Operating;
+
+            // Poll the inbox for new messages to process.
+            while let Ok(letter) = self.mailbox.recv().await {
+                // TODO: Panic safety.
+                letter.deliver(&mut actor, &mut self).await;
+
+                // Handle the case where a message handler initiated shutdown.
+                if self.state.stopping() {
+                    todo!()
+                }
+            }
+
+            // The actor has terminated, perform final cleanup and drop it.
+            self.state = ActorState::Stopped;
+            // TODO: Panic safety.
+            actor.stopped().await;
+        })
     }
 
     // TODO: Support for scheduling messages to the actor.

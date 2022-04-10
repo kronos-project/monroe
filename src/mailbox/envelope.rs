@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use futures_core::future::LocalBoxFuture;
+use futures_core::future::BoxFuture;
 
 use super::OneshotSender;
 use crate::{Actor, Context, Handler, Message};
@@ -12,7 +12,7 @@ use crate::{Actor, Context, Handler, Message};
 /// are free to implement custom strategies for message handling
 /// in [`EnvelopeProxy::deliver`] without the actor needing to know
 /// the internals.
-pub trait EnvelopeProxy {
+pub trait EnvelopeProxy: Send {
     /// The actor type the envelope is directed at.
     type Actor: Actor;
 
@@ -24,7 +24,7 @@ pub trait EnvelopeProxy {
         self: Box<Self>,
         actor: &'a mut Self::Actor,
         ctx: &'a mut Context<Self::Actor>,
-    ) -> LocalBoxFuture<'a, ()>;
+    ) -> BoxFuture<'a, ()>;
 }
 
 /// A fire-and-forget envelope for implementing the *tell* strategy.
@@ -49,7 +49,7 @@ impl<A: Actor + Handler<M>, M: Message> EnvelopeProxy for ForgettingEnvelope<A, 
         self: Box<Self>,
         actor: &'a mut Self::Actor,
         ctx: &'a mut Context<Self::Actor>,
-    ) -> LocalBoxFuture<'a, ()> {
+    ) -> BoxFuture<'a, ()> {
         Box::pin(async move {
             let Self { message, .. } = *self;
 
@@ -85,7 +85,7 @@ impl<A: Actor + Handler<M>, M: Message> EnvelopeProxy for ReturningEnvelope<A, M
         self: Box<Self>,
         actor: &'a mut Self::Actor,
         ctx: &'a mut Context<Self::Actor>,
-    ) -> LocalBoxFuture<'a, ()> {
+    ) -> BoxFuture<'a, ()> {
         Box::pin(async move {
             let Self { message, tx, .. } = *self;
 

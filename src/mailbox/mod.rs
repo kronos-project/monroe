@@ -2,6 +2,7 @@ mod envelope;
 pub use self::envelope::*;
 
 mod channel;
+pub use self::channel::{bounded, unbounded};
 
 // TODO: The end goal is not having to allocate every `EnvelopeProxy::deliver`
 //       future on the heap. This requires us to assign a GAT to the trait
