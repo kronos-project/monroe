@@ -11,6 +11,7 @@ edition = "2021"
 
 [dependencies]
 futures-core = "0.3"
+futures-util = "0.3"
 pin-project = "1.0.10"
 spin = { version = "0.9.2", features = ["mutex"] }
 tokio = { version = "1", features = ["rt", "sync"] }

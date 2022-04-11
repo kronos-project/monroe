@@ -2,6 +2,9 @@ use std::future::Future;
 
 use crate::Context;
 
+mod new;
+pub use self::new::NewActor;
+
 // TODO: Actor context.
 // TODO: Supervision.
 
