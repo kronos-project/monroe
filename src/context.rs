@@ -32,11 +32,14 @@ pub enum ActorState {
     Operating,
     /// The actor is in the process of stopping.
     ///
-    /// It currently does not process any messages and its
-    /// supervisor is responsible for deciding whether the
-    /// actor will transition back to [`ActorState::Starting`]
-    /// or go into [`ActorState::Stopped`].
-    // TODO: Doc reference to Supervisor once implemented.
+    /// It currently does not process any new messages and waits
+    /// for its runtime to detect the stopping state.
+    ///
+    /// [`Supervisor::on_graceful_stop`] will be queried for a
+    /// subsequent actor running strategy. If the supervisor
+    /// choses to restart the actor, it will transition back
+    /// to [`ActorState::Starting`] or else remain in its
+    /// current state until ultimately dropped.
     Stopping,
 }
 
@@ -154,6 +157,9 @@ impl<S: Supervisor<NA>, NA: NewActor> Runner<S, NA> {
 
     fn create_new_actor(&mut self, arg: NA::Arg) -> Result<(), NA::Error> {
         self.new_actor.make(&mut self.context, arg).map(|actor| {
+            // Reset the context back into a sane state for the new actor.
+            self.context.state = ActorState::Starting;
+
             // Force the actor to be dropped in place while replacing it.
             unsafe { Pin::new_unchecked(&mut self.actor) }.set(actor);
         })
@@ -196,6 +202,51 @@ impl<S: Supervisor<NA>, NA: NewActor> Runner<S, NA> {
             ActorFate::Stop => ControlFlow::BREAK,
         }
     }
+
+    async fn main_loop(&mut self) -> ControlFlow<()> {
+        'main: loop {
+            // When actors deal with errors/shutdown, we use `ControlFlow` to indicate
+            // how to proceed. For `Break`, the actor is permanently shut down and no
+            // longer participates in the main loop. `Continue` is our indication of
+            // when an actor was restarted. This is to be taken quite literally - instead
+            // of taking the place of its predecessor, we begin the main loop from scratch.
+
+            // Initialize the actor before processing any messages.
+            if let Err(panic) = panic_safe(self.actor.starting(&mut self.context)).await {
+                self.handle_panic(panic)?;
+                continue 'main;
+            }
+
+            // If the actor has not already been stopped, it is not considered operating.
+            if !self.context.state.stopping() {
+                self.context.state = ActorState::Operating;
+            } else {
+                self.handle_stop()?;
+                continue 'main;
+            }
+
+            // Poll the inbox for new messages to process.
+            while let Ok(letter) = self.context.mailbox.recv().await {
+                // Poll from the mailbox until all ref-counted senders are gone.
+                if let Err(panic) =
+                    panic_safe(letter.deliver(&mut self.actor, &mut self.context)).await
+                {
+                    self.handle_panic(panic)?;
+                    continue 'main;
+                }
+
+                // Handle the case where a message handler initiated shutdown.
+                if self.context.state.stopping() {
+                    self.handle_stop()?;
+                    continue 'main;
+                }
+            }
+
+            // The actor has reached the end of its lifecycle, we're done here.
+            // All `Address`es are dropped so we don't need to restart.
+            break ControlFlow::BREAK;
+        }
+    }
 }
 
 impl<A: Actor> Context<A> {
@@ -206,37 +257,16 @@ impl<A: Actor> Context<A> {
         new_actor: NA,
         arg: NA::Arg,
     ) -> Result<JoinHandle<()>, NA::Error> {
-        let runner = Runner::new(supervisor, new_actor, self, arg)?;
+        let mut runner = Runner::new(supervisor, new_actor, self, arg)?;
 
         // TODO: Runtime abstraction for spawn calls?
         Ok(tokio::spawn(async move {
-            /*// Initialize the actor before processing any messages.
-            if let Err(panic) = panic_safe(runner.actor.starting(&mut self)).await {
-                todo!()
-            }
+            // Run the main loop until it terminates. We never care
+            // about the `ControlFlow::Break` values we're getting.
+            let _ = runner.main_loop().await;
 
-            // The actor is now considered running, if not already stopped.
-            if self.state.stopping() {
-                todo!()
-            }
-            self.state = ActorState::Operating;
-
-            // Poll the inbox for new messages to process.
-            while let Ok(letter) = self.mailbox.recv().await {
-                if let Err(panic) = panic_safe(letter.deliver(&mut actor, &mut self)).await {
-                    todo!()
-                }
-
-                // Handle the case where a message handler initiated shutdown.
-                if self.state.stopping() {
-                    todo!()
-                }
-            }
-
-            // The actor has terminated, perform final cleanup and drop it.
-            if let Err(panic) = panic_safe(actor.stopped()).await {
-                todo!()
-            }*/
+            // Consume the actor and perform final cleanup.
+            runner.actor.stopped().await;
         }))
     }
 }

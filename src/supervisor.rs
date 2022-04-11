@@ -22,7 +22,7 @@ pub enum ActorFate<Arg> {
 /// actor in monroe must have a designated supervisor which
 /// deals with different kinds of errors and crashes an
 /// actor by itself cannot recover from.
-pub trait Supervisor<NA: NewActor> {
+pub trait Supervisor<NA: NewActor>: Send + 'static {
     /// Called when an actor is gracefully shutting down after
     /// calling [`Context::stop`][crate::Context::stop].
     fn on_graceful_stop(&mut self) -> ActorFate<NA::Arg>;

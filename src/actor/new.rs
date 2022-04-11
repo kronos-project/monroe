@@ -3,7 +3,7 @@ use crate::Context;
 
 /// Unified interface to describe the creation of new [`Actor`]s
 /// throughout the entire crate.
-pub trait NewActor {
+pub trait NewActor: Send + 'static {
     /// The [`Actor`] type produced by this factory.
     type Actor: Actor;
 
