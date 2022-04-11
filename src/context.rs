@@ -160,6 +160,10 @@ impl<S: Supervisor<NA>, NA: NewActor> Runner<S, NA> {
             // Reset the context back into a sane state for the new actor.
             self.context.state = ActorState::Starting;
 
+            // SAFETY: `self.actor` never moves. We only call this code
+            // after moving the runner object into a separate task in
+            // `Context::run` where it will permanently stay.
+
             // Force the actor to be dropped in place while replacing it.
             unsafe { Pin::new_unchecked(&mut self.actor) }.set(actor);
         })
