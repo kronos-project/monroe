@@ -13,13 +13,13 @@ use std::{
     collections::VecDeque,
     fmt,
     future::Future,
+    num::NonZeroUsize,
     pin::Pin,
     sync::{
         atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc, Mutex, MutexGuard, Weak,
     },
     task::{Context, Poll},
-    time::Instant,
 };
 
 /// Create a channel with no maximum capacity.
@@ -49,11 +49,10 @@ pub fn unbounded<T>() -> (Sender<T>, Receiver<T>) {
 /// [`Sender::send`] will block (unblocking once a receiver has made space). If blocking behaviour
 /// is not desired, [`Sender::try_send`] may be used.
 ///
-/// Like `std::sync::mpsc`, `flume` supports 'rendezvous' channels. A bounded queue with a maximum capacity of zero
-/// will block senders until a receiver is available to take the value. You can imagine a rendezvous channel as a
-/// ['Glienicke Bridge'](https://en.wikipedia.org/wiki/Glienicke_Bridge)-style location at which senders and receivers
-/// perform a handshake and transfer ownership of a value.
+/// Unlike `std::sync::mpsc`, this channel does not support channels with a capacity of 0.
+/// Calling this method with `0` as the cap will lead to a panic.
 pub fn bounded<T>(cap: usize) -> (Sender<T>, Receiver<T>) {
+    let cap = NonZeroUsize::new(cap).expect("Tried to create a channel with 0 capacity");
     let shared = Arc::new(Shared::new(Some(cap)));
     (
         Sender {
@@ -231,12 +230,14 @@ impl<'a, T> Future for SendFut<'a, T> {
             let mut mut_self = self.project();
             let (shared, this_hook) = (&mut_self.sender.shared, &mut mut_self.hook);
 
+            let item = match this_hook.take().unwrap() {
+                SendState::NotYetSent(item) => item,
+                SendState::QueuedItem(_) => return Poll::Ready(Ok(())),
+            };
+
             shared.send(
                 // item
-                match this_hook.take().unwrap() {
-                    SendState::NotYetSent(item) => item,
-                    SendState::QueuedItem(_) => return Poll::Ready(Ok(())),
-                },
+                item,
                 // should_block
                 true,
                 // make_signal
@@ -308,7 +309,7 @@ impl<'a, T> RecvFut<'a, T> {
         stream: bool,
     ) -> Poll<Result<T, RecvError>> {
         if self.hook.is_some() {
-            if let Ok(msg) = self.receiver.shared.recv_sync(None) {
+            if let Ok(msg) = self.receiver.shared.recv_sync() {
                 Poll::Ready(Ok(msg))
             } else if self.receiver.shared.is_disconnected() {
                 Poll::Ready(Err(RecvError::Disconnected))
@@ -326,7 +327,7 @@ impl<'a, T> RecvFut<'a, T> {
                     Poll::Ready(
                         self.receiver
                             .shared
-                            .recv_sync(None)
+                            .recv_sync()
                             .map(Ok)
                             .unwrap_or(Err(RecvError::Disconnected)),
                     )
@@ -462,8 +463,8 @@ fn wait_lock<T>(lock: &Mutex<T>) -> MutexGuard<'_, T> {
     lock.lock().unwrap()
 }
 
-type SignalVec<T> = VecDeque<Arc<Hook<T, dyn Signal>>>;
-
+// `None` = Async signal via `trigger`
+// `Some(None)` = synchronous receiver
 struct Hook<T, S: ?Sized>(Option<Spinlock<Option<T>>>, S);
 
 impl<T> Hook<T, signal::SyncSignal> {
@@ -477,23 +478,6 @@ impl<T> Hook<T, signal::SyncSignal> {
                 break None;
             } else {
                 self.signal().wait()
-            }
-        }
-    }
-
-    // Err(true) if timeout
-    pub fn wait_deadline_recv(&self, abort: &AtomicBool, deadline: Instant) -> Result<T, bool> {
-        loop {
-            let disconnected = abort.load(Ordering::SeqCst); // Check disconnect *before* msg
-            let msg = self.0.as_ref().unwrap().lock().take();
-            if let Some(msg) = msg {
-                break Ok(msg);
-            } else if disconnected {
-                break Err(false);
-            } else if let Some(dur) = deadline.checked_duration_since(Instant::now()) {
-                self.signal().wait_timeout(dur);
-            } else {
-                break Err(true);
             }
         }
     }
@@ -547,16 +531,24 @@ impl<T, S: ?Sized + Signal> Hook<T, S> {
     }
 }
 
+type SignalVec<T> = VecDeque<Arc<Hook<T, dyn Signal>>>;
+
 struct Chan<T> {
-    sending: Option<(usize, SignalVec<T>)>,
+    // `sending` is true if this is a bounded channel and the first element
+    // of the tuple is the cap. The latter element is a List of senders that are waiting
+    // for the channel to becompe empty
+    sending: Option<(NonZeroUsize, SignalVec<T>)>,
     queue: VecDeque<T>,
+    // `waiting` contains all current receivers.
+    // The `Hook` inside is responsible for telling the receiver
+    // that a message is ready to be taken out of the `queue`
     waiting: SignalVec<T>,
 }
 
 impl<T> Chan<T> {
     fn pull_pending(&mut self, pull_extra: bool) {
         if let Some((cap, sending)) = &mut self.sending {
-            let effective_cap = *cap + pull_extra as usize;
+            let effective_cap = cap.get() + pull_extra as usize;
 
             while self.queue.len() < effective_cap {
                 if let Some(s) = sending.pop_front() {
@@ -585,7 +577,7 @@ struct Shared<T> {
 }
 
 impl<T> Shared<T> {
-    fn new(cap: Option<usize>) -> Self {
+    fn new(cap: Option<NonZeroUsize>) -> Self {
         Self {
             chan: Mutex::new(Chan {
                 sending: cap.map(|cap| (cap, VecDeque::new())),
@@ -610,51 +602,49 @@ impl<T> Shared<T> {
         if self.is_disconnected() {
             Err(SendError(msg)).into()
         } else if !chan.waiting.is_empty() {
-            let mut msg = Some(msg);
-
-            loop {
-                let slot = chan.waiting.pop_front();
-                match slot.as_ref().map(|r| r.fire_send(msg.take().unwrap())) {
-                    // No more waiting receivers and msg in queue, so break out of the loop
-                    None if msg.is_none() => break,
-                    // No more waiting receivers, so add msg to queue and break out of the loop
-                    None => {
-                        chan.queue.push_back(msg.unwrap());
-                        break;
-                    }
-                    Some((Some(m), signal)) => {
-                        if signal.fire() {
-                            // Was async and a stream, so didn't acquire the message. Wake another
-                            // receiver, and do not yet push the message.
-                            msg.replace(m);
-                            continue;
-                        } else {
-                            // Was async and not a stream, so it did acquire the message. Push the
-                            // message to the queue for it to be received.
-                            chan.queue.push_back(m);
-                            drop(chan);
-                            break;
-                        }
-                    }
-                    Some((None, signal)) => {
-                        drop(chan);
-                        signal.fire();
-                        break; // Was sync, so it has acquired the message
-                    }
+            let receiver = match chan.waiting.pop_front() {
+                Some(r) => r,
+                // there is no waiting receiver, so just push message to queue
+                // and return successfully
+                None => {
+                    chan.queue.push_back(msg);
+                    return Ok(()).into();
                 }
-            }
+            };
+
+            match receiver.fire_send(msg) {
+                // `Some(...)` is returned for asynchronous receivers.
+                // After firing they will be waken up and will take the message
+                // by trying to pop a message from the queue, so we push it there
+                (Some(msg), signal) => {
+                    signal.fire();
+                    chan.queue.push_back(msg);
+                    drop(chan);
+                }
+                // `None` is only returned for synchronous receivers.
+                // That means it took the message and put it into his buffer
+                (None, signal) => {
+                    drop(chan);
+                    signal.fire();
+                }
+            };
 
             Ok(()).into()
         } else if chan
             .sending
             .as_ref()
-            .map(|(cap, _)| chan.queue.len() < *cap)
+            // check if we have a maximum capacity, if so,
+            // only push item to queue if there is place for one additional element
+            .map(|(cap, _)| chan.queue.len() < cap.get())
             .unwrap_or(true)
         {
             chan.queue.push_back(msg);
             Ok(()).into()
         } else if should_block {
-            // Only bounded from here on
+            // if this case is hit, it means the bounded channel is full.
+            // So, if we should wait for the channel to become empty, call do_block,
+            // otherwise just return an error
+
             let hook = make_signal(msg);
             chan.sending.as_mut().unwrap().1.push_back(hook.clone());
             drop(chan);
@@ -692,40 +682,17 @@ impl<T> Shared<T> {
         }
     }
 
-    fn recv_sync(&self, block: Option<Option<Instant>>) -> Result<T, RecvError> {
+    fn recv_sync(&self) -> Result<T, RecvError> {
         self.recv(
             // should_block
-            block.is_some(),
+            false,
             // make_signal
             || Hook::slot(None, signal::SyncSignal::default()),
             // do_block
             |hook| {
-                if let Some(deadline) = block.unwrap() {
-                    hook.wait_deadline_recv(&self.disconnected, deadline)
-                        .or_else(|timed_out| {
-                            if timed_out {
-                                // Remove our signal
-                                let hook: Arc<Hook<T, dyn Signal>> = hook.clone();
-                                wait_lock(&self.chan)
-                                    .waiting
-                                    .retain(|s| s.signal().as_ptr() != hook.signal().as_ptr());
-                            }
-                            match hook.try_take() {
-                                Some(msg) => Ok(msg),
-                                None => {
-                                    if let Some(msg) = wait_lock(&self.chan).queue.pop_front() {
-                                        Ok(msg)
-                                    } else {
-                                        Err(RecvError::Disconnected)
-                                    }
-                                }
-                            }
-                        })
-                } else {
-                    hook.wait_recv(&self.disconnected)
-                        .or_else(|| wait_lock(&self.chan).queue.pop_front())
-                        .ok_or(RecvError::Disconnected)
-                }
+                hook.wait_recv(&self.disconnected)
+                    .or_else(|| wait_lock(&self.chan).queue.pop_front())
+                    .ok_or(RecvError::Disconnected)
             },
         )
     }
@@ -809,10 +776,6 @@ mod signal {
         pub fn wait(&self) {
             thread::park();
         }
-
-        pub fn wait_timeout(&self, dur: Duration) {
-            thread::park_timeout(dur);
-        }
     }
 
     pub struct AsyncSignal {
@@ -841,6 +804,7 @@ mod signal {
         fn as_any(&self) -> &(dyn Any + 'static) {
             self
         }
+
         fn as_ptr(&self) -> *const () {
             self as *const _ as *const ()
         }
@@ -908,35 +872,9 @@ mod tests {
     }
 
     #[test]
-    fn async_recv_disconnect() {
-        let (tx, rx) = bounded::<i32>(0);
-
-        let t = std::thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_millis(250));
-            drop(tx)
-        });
-
-        block_on(async {
-            assert_eq!(rx.recv().await, Err(RecvError::Disconnected));
-        });
-
-        t.join().unwrap();
-    }
-
-    #[test]
-    fn async_send_disconnect() {
-        let (tx, rx) = bounded(0);
-
-        let t = std::thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_millis(250));
-            drop(rx)
-        });
-
-        block_on(async {
-            assert_eq!(tx.send(42u32).await, Err(SendError(42)));
-        });
-
-        t.join().unwrap();
+    #[should_panic]
+    fn try_create_channel_with_zero_cap() {
+        let (_, _) = bounded::<()>(0);
     }
 
     #[tokio::test]
