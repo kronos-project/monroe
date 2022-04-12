@@ -1,14 +1,34 @@
 use std::future::Future;
 
-use crate::Context;
+// We want `Supervisor` in scope for more convenient doc references.
+#[allow(unused_imports)]
+use crate::{supervisor::Supervisor, Context};
 
 mod new;
 pub use self::new::NewActor;
 
-// TODO: Actor context.
-// TODO: Supervision.
-
-/// TODO
+/// An encapsulated unit of computation.
+///
+/// Actors are finite state machines which communicate merely
+/// by exchanging [`Message`]s. They don't share their state
+/// with the outer world and remove the need for synchronization
+/// primitives in concurrent programs.
+///
+/// # Supervision
+///
+/// Every actor in the `monroe` crate has a [`Supervisor`]
+/// associated which is consulted in different scenarios of
+/// failures for the creation of self-healing systems.
+///
+/// An implementation of the [`NewActor`] trait is required
+/// to describe the construction of an actor object for
+/// supervisor-triggered restarts.
+///
+/// # Handling messages
+///
+/// Actors may have many implementations of the [`Handler`]
+/// trait for messages they want to support.
+// TODO: Explain how actors are started.
 pub trait Actor: Sized + Send + 'static {
     /// The [`Future`] type produced by [`Actor::starting`].
     type StartingFuture<'a>: Future<Output = ()> + Send + 'a
@@ -18,18 +38,25 @@ pub trait Actor: Sized + Send + 'static {
     /// The [`Future`] type produced by [`Actor::stopped`].
     type StoppedFuture: Future<Output = ()> + Send;
 
-    /// Called when an actor is in the process of starting up.
+    /// Called when the actor is in the process of starting up.
+    ///
+    /// This is also naturally called after an actor was
+    /// *restarted* by its [`Supervisor`].
     ///
     /// During the execution of this method, no messages will
-    /// be processed yet. Should be used for initialization
-    /// work.
+    /// be processed yet. Can be used for initialization work.
     fn starting(&mut self, ctx: &mut Context<Self>) -> Self::StartingFuture<'_>;
 
-    /// Called when an actor has been permanently stopped.
+    /// Called when the actor has been permanently stopped.
     ///
-    /// This consumes the actor object and will be responsible
-    /// for dropping it. Should be used for final cleanup work.
-    fn stopped(self) -> Self::StoppedFuture;
+    /// As the actor is considered stopped at this point, no
+    /// execution [`Context`] is provided to this method.
+    ///
+    /// Final cleanup work may be performed before the actor
+    /// object itself will be dropped.
+    fn stopped(&mut self) -> Self::StoppedFuture;
+
+    // TODO: pre/post restart methods?
 }
 
 /// Representation of a message type that can be sent to an actor.

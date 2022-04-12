@@ -7,7 +7,7 @@ use std::{
     sync::atomic::{AtomicU64, Ordering},
 };
 
-use futures_util::FutureExt;
+use futures_util::{future::CatchUnwind, FutureExt};
 use tokio::task::JoinHandle;
 
 use crate::{
@@ -76,16 +76,16 @@ fn next_actor_id() -> u64 {
 #[derive(Debug)]
 pub struct Context<A: Actor> {
     id: u64,
-    state: ActorState,
     mailbox: MailboxReceiver<A>,
+    state: ActorState,
 }
 
 impl<A: Actor> Context<A> {
     pub(crate) fn new(mailbox: MailboxReceiver<A>) -> Self {
         Self {
             id: next_actor_id(),
-            state: ActorState::Starting,
             mailbox,
+            state: ActorState::Starting,
         }
     }
 
@@ -158,7 +158,7 @@ impl<S: Supervisor<NA>, NA: NewActor> Runner<S, NA> {
     fn create_new_actor(&mut self, arg: NA::Arg) -> Result<(), NA::Error> {
         self.new_actor.make(&mut self.context, arg).map(|actor| {
             // Reset the context back into a sane state for the new actor.
-            self.context.state = ActorState::Starting;
+            self.context.reset();
 
             // SAFETY: `self.actor` never moves. We only call this code
             // after moving the runner object into a separate task in
@@ -254,6 +254,13 @@ impl<S: Supervisor<NA>, NA: NewActor> Runner<S, NA> {
 }
 
 impl<A: Actor> Context<A> {
+    // Resets the context back into a state reusable for restarted actors.
+    // This should take care of resetting all the state mutable by the actor.
+    // This includes everything but mailbox and actor ID.
+    fn reset(&mut self) {
+        self.state = ActorState::Starting;
+    }
+
     /// Executes the given [`Actor`] object in this context.
     pub(crate) fn run<S: Supervisor<NA>, NA: NewActor<Actor = A>>(
         self,
@@ -276,6 +283,6 @@ impl<A: Actor> Context<A> {
 }
 
 #[inline(always)]
-async fn panic_safe<Fut: Future<Output = T>, T>(fut: Fut) -> std::thread::Result<T> {
-    AssertUnwindSafe(fut).catch_unwind().await
+fn panic_safe<Fut: Future>(fut: Fut) -> CatchUnwind<AssertUnwindSafe<Fut>> {
+    AssertUnwindSafe(fut).catch_unwind()
 }
