@@ -28,6 +28,41 @@ pub use self::new::NewActor;
 ///
 /// Actors may have many implementations of the [`Handler`]
 /// trait for messages they want to support.
+///
+/// # Exception safety
+///
+/// A big aspect of designing robust actors lies in the notion
+/// of [exception safety].
+///
+/// Actors may panic at every stage of their lifecycle. These
+/// panics are caught by us and forwarded to [`Supervisor::on_panic`]
+/// (*unless panics abort instead of unwind*).
+///
+/// According to the supervision strategy, an actor object
+/// may either be
+///
+/// - *restarted*; the old actor object is attempted to be
+///   replaced by a new one before calling [`Actor::starting`]
+///   again.
+///
+///   If this fails to the point of
+///   [`Supervisor::on_second_restart_failure`] being called,
+///   [`Actor::stopped`] will be invoked with the **unmodified**
+///   actor object.
+///
+/// - *stopped*; in which case [`Actor::stopped`] will be called
+///   directly with the actor's current state.
+///
+/// As a result, the implementation of [`Actor::stopped`] should
+/// be crafted with the idea in mind that an actor may have just
+/// been interrupted right in the middle of a [`Message`] [`Handler`].
+///
+/// Ideally, the implementation of [`Actor::stopped`] should assume
+/// no particular logical invariants on the actor object as these
+/// may have been broken depending on the cause behind the actor
+/// shutdown.
+///
+/// [exception safety]: https://github.com/rust-lang/rfcs/blob/master/text/1236-stabilize-catch-panic.md
 // TODO: Explain how actors are started.
 pub trait Actor: Sized + Send + 'static {
     /// The [`Future`] type produced by [`Actor::starting`].
@@ -54,6 +89,13 @@ pub trait Actor: Sized + Send + 'static {
     ///
     /// Final cleanup work may be performed before the actor
     /// object itself will be dropped.
+    ///
+    /// # Exception safety
+    ///
+    /// As detailed in the documentation for [`Actor`], this
+    /// method should not assume logical invariants on the
+    /// actor object as they may have been violated under the
+    /// circumstances of the shutdown.
     fn stopped(&mut self) -> Self::StoppedFuture;
 
     // TODO: pre/post restart methods?
