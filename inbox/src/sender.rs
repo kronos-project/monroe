@@ -41,7 +41,7 @@ impl<T> std::error::Error for SendError<T> {}
 
 /// The transmitting end of a channel.
 pub struct Sender<T> {
-    shared: Arc<Shared<T>>,
+    pub(crate) shared: Arc<Shared<T>>,
 }
 
 impl<T> Sender<T> {
@@ -102,7 +102,7 @@ pin_project! {
     }
 
     impl<T> PinnedDrop for SendFut<'_, T> {
-        fn drop(this: Pin<&mut Self>) {
+        fn drop(mut this: Pin<&mut Self>) {
             this.reset_hook();
         }
     }
@@ -117,7 +117,7 @@ impl<T> SendFut<'_, T> {
             _ => return,
         };
 
-        let chan = self.sender.shared.chan.lock();
+        let mut chan = self.sender.shared.chan.lock();
 
         // this can't be `None`, because `QueuedItem` state can only exist if
         // we have to wait for free capacity
@@ -162,6 +162,7 @@ impl<T> Future for SendFut<'_, T> {
             return Poll::Pending;
         }
 
+        // first time polling, try to send the message using `shared.send`
         if matches!(self.hook, Some(SendState::NotYetSent(_))) {
             let mut this = self.project();
 
@@ -173,20 +174,17 @@ impl<T> Future for SendFut<'_, T> {
                 SendState::QueuedItem(_) => unreachable!(),
             };
 
-            shared.send(
-                // item
-                item,
-                // mk_signal
-                |msg| SenderHook::new(Some(msg), AsyncSignal::new(cx)),
-                // do_block
-                |hook| {
-                    // when we "block"/wait, we update our state so when
-                    // we get woken up again, we jump into the first `if` clause
-                    // and try to pop the item from the queue
-                    **this_hook = Some(SendState::QueuedItem(hook));
-                    Poll::Pending
-                },
-            );
+            return shared.send(item, |item, mut chan| {
+                let hook = SenderHook::new(Some(item), AsyncSignal::new(cx));
+                chan.sending.as_mut().unwrap().1.push_back(hook.clone());
+                drop(chan);
+
+                // when we "block"/wait, we update our state so when
+                // we get woken up again, we jump into the first `if` clause
+                // and try to pop the item from the queue
+                **this_hook = Some(SendState::QueuedItem(hook));
+                Poll::Pending
+            });
         }
 
         // unreachable

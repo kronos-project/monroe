@@ -1,4 +1,9 @@
-use std::sync::Arc;
+use crate::signal::AsyncSignal;
+use std::{
+    marker::PhantomData,
+    sync::{atomic::Ordering, Arc},
+    task::Waker,
+};
 
 pub type Spinlock<T> = spin::Mutex<T>;
 
@@ -38,46 +43,39 @@ impl<T, S: ?Sized> SenderHook<T, S> {
     }
 }
 
-/// A hook can either be a trigger or slot one.
-///
-/// **Trigger** hooks do not carry any data and will only
-/// fire a signal once.
-///
-/// **Slot** hooks will fire a signal, but also store the message
-/// inside them so it can be taken out later.
-pub enum HookKind<T> {
-    Slot(Spinlock<Option<T>>),
-    Trigger,
-}
-
 /// A [`ReceiverHook`] represents the signal that a waiting
 /// receiver will insert into the `waiting` list.
 pub struct ReceiverHook<T, S: ?Sized> {
-    slot: HookKind<T>,
+    _marker: PhantomData<T>,
     signal: S,
 }
 
 impl<T, S: ?Sized> ReceiverHook<T, S> {
+    pub fn new(signal: S) -> Arc<Self>
+    where
+        S: Sized,
+    {
+        Arc::new(Self {
+            signal,
+            _marker: PhantomData,
+        })
+    }
+
     pub fn signal(&self) -> &S {
         &self.signal
     }
+}
 
-    /// This method will try to send the given message into this
-    /// receiver hook.
-    ///
-    /// If this hook is a [`HookKind::Slot`], `None` is returned, indicating that
-    /// this hook consumed this message.
-    ///
-    /// Otherwise, `Some` with the original message is returned, indicating that
-    /// the corresponding receiver will take the message out of the message
-    /// queue when it signal fires.
-    pub fn send(&self, msg: T) -> Option<T> {
-        match self.slot {
-            HookKind::Slot(slot) => {
-                *slot.lock() = Some(msg);
-                None
+impl<T> ReceiverHook<T, AsyncSignal> {
+    pub fn update_waker(&self, cx_waker: &Waker) {
+        if !self.signal.waker.lock().will_wake(cx_waker) {
+            *self.signal.waker.lock() = cx_waker.clone();
+
+            // avoid the edge case where the waker was woken
+            // just before the wakers were swapped.
+            if self.signal.woken.load(Ordering::SeqCst) {
+                cx_waker.wake_by_ref();
             }
-            HookKind::Trigger => Some(msg),
         }
     }
 }

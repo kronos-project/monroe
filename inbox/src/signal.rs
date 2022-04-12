@@ -12,8 +12,8 @@ pub trait Signal: Send + Sync + 'static {
 }
 
 pub struct AsyncSignal {
-    waker: Spinlock<Waker>,
-    woken: AtomicBool,
+    pub(crate) waker: Spinlock<Waker>,
+    pub(crate) woken: AtomicBool,
 }
 
 impl AsyncSignal {
