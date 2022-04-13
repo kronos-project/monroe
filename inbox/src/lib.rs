@@ -9,17 +9,15 @@
 #![deny(missing_docs)]
 
 mod hook;
-mod signal;
 
 mod sender;
-pub use sender::*;
+pub use self::sender::*;
+
+mod signal;
 
 mod receiver;
-pub use receiver::*;
+pub use self::receiver::*;
 
-use hook::{ReceiverHook, SenderHook};
-use parking_lot::{Mutex, MutexGuard};
-use signal::Signal;
 use std::{
     collections::VecDeque,
     num::NonZeroUsize,
@@ -28,6 +26,10 @@ use std::{
         Arc,
     },
 };
+
+use hook::{ReceiverHook, SenderHook};
+use parking_lot::{Mutex, MutexGuard};
+use signal::Signal;
 
 /// Create a channel with no maximum capacity.
 ///

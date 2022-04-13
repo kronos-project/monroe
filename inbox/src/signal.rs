@@ -1,9 +1,10 @@
-use crate::hook::{SenderHook, Spinlock};
 use std::{
     any::Any,
     sync::atomic::{AtomicBool, Ordering},
     task::{Context, Waker},
 };
+
+use crate::hook::{SenderHook, SpinLock};
 
 pub trait Signal: Send + Sync + 'static {
     fn fire(&self);
@@ -12,14 +13,14 @@ pub trait Signal: Send + Sync + 'static {
 }
 
 pub struct AsyncSignal {
-    pub(crate) waker: Spinlock<Waker>,
+    pub(crate) waker: SpinLock<Waker>,
     pub(crate) woken: AtomicBool,
 }
 
 impl AsyncSignal {
     pub fn new(cx: &Context) -> Self {
         AsyncSignal {
-            waker: Spinlock::new(cx.waker().clone()),
+            waker: SpinLock::new(cx.waker().clone()),
             woken: AtomicBool::new(false),
         }
     }

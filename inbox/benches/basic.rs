@@ -1,6 +1,7 @@
+use std::fmt::{self, Debug};
+
 use async_trait::async_trait;
 use criterion::{black_box, criterion_group, criterion_main, Bencher, BenchmarkId, Criterion};
-use std::fmt::{self, Debug};
 
 #[async_trait]
 trait Sender: Clone + Send + Sync + Sized + 'static {

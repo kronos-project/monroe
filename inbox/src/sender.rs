@@ -1,10 +1,3 @@
-use crate::{
-    hook::SenderHook,
-    signal::{AsyncSignal, Signal},
-    Shared,
-};
-use futures_core::FusedFuture;
-use pin_project_lite::pin_project;
 use std::{
     fmt,
     future::Future,
@@ -13,13 +6,23 @@ use std::{
     task::Poll,
 };
 
-/// An error that may be emitted when attempting to send a value into a channel on a sender when
-/// all receivers are dropped.
+use futures_core::FusedFuture;
+use pin_project_lite::pin_project;
+
+use crate::{
+    hook::SenderHook,
+    signal::{AsyncSignal, Signal},
+    Shared,
+};
+
+/// Error produced by the sender when trying to send a value to
+/// an already dropped receiver.
 #[derive(Copy, Clone, PartialEq, Eq)]
 pub struct SendError<T>(pub T);
 
 impl<T> SendError<T> {
-    /// Consume the error, yielding the message that failed to send.
+    /// Consume the error, yielding the message that failed to
+    /// be sent.
     pub fn into_inner(self) -> T {
         self.0
     }

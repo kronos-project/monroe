@@ -1,16 +1,17 @@
-use crate::signal::AsyncSignal;
 use std::{
     marker::PhantomData,
     sync::{atomic::Ordering, Arc},
     task::Waker,
 };
 
-pub type Spinlock<T> = spin::Mutex<T>;
+use crate::signal::AsyncSignal;
+
+pub type SpinLock<T> = spin::Mutex<T>;
 
 /// A [`SenderHook`] represents the signal that a waiting sender
 /// will insert into the `sending` list.
 pub struct SenderHook<T, S: ?Sized> {
-    pub(crate) slot: Spinlock<Option<T>>,
+    pub(crate) slot: SpinLock<Option<T>>,
     pub(crate) signal: S,
 }
 
@@ -20,7 +21,7 @@ impl<T, S: ?Sized> SenderHook<T, S> {
         S: Sized,
     {
         Arc::new(Self {
-            slot: Spinlock::new(msg),
+            slot: SpinLock::new(msg),
             signal,
         })
     }
@@ -48,7 +49,7 @@ impl<T, S: ?Sized> SenderHook<T, S> {
 pub struct ReceiverHook<T, S: ?Sized> {
     // Use `Spinlock<T>` to keep Send and Sync
     // bounds analog to flume
-    _marker: PhantomData<Spinlock<T>>,
+    _marker: PhantomData<SpinLock<T>>,
     signal: S,
 }
 

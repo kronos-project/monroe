@@ -1,10 +1,3 @@
-use futures_core::FusedFuture;
-
-use crate::{
-    hook::ReceiverHook,
-    signal::{AsyncSignal, Signal},
-    Sender, Shared,
-};
 use std::{
     fmt,
     future::Future,
@@ -13,11 +6,20 @@ use std::{
     task::{Context, Poll},
 };
 
-/// An error that may be emitted when attempting to wait for a value on a receiver when all senders
-/// are dropped and there are no more messages in the channel.
+use futures_core::FusedFuture;
+
+use crate::{
+    hook::ReceiverHook,
+    signal::{AsyncSignal, Signal},
+    Sender, Shared,
+};
+
+/// Error produced by the receiver when waiting to receive a value
+/// fails due to all senders being disconnected.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum RecvError {
-    /// All senders were dropped and no messages are waiting in the channel, so no further messages can be received.
+    /// All senders were dropped and no messages are waiting in the
+    /// channel, so no further messages can be received.
     Disconnected,
 }
 
@@ -31,13 +33,15 @@ impl fmt::Display for RecvError {
 
 impl std::error::Error for RecvError {}
 
-/// An error that may be emitted when attempting to wait for a value on a receiver when all senders
-/// are dropped and there are no more messages in the channel.
+/// Error produced by the receiver when trying to wait for a value
+/// fails due to all senders being disconnected.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum TryRecvError {
-    /// This channel is currently empty, but the Sender(s) have not yet disconnected, so data may yet become available.
+    /// This channel is currently empty, but the Sender(s) have not
+    /// yet disconnected, so data may still become available.
     Empty,
-    /// All senders were dropped and no messages are waiting in the channel, so no further messages can be received.
+    /// All senders were dropped and no messages are waiting in the
+    /// channel, so no further messages can be received.
     Disconnected,
 }
 
@@ -66,13 +70,16 @@ pub struct Receiver<T> {
 }
 
 impl<T> Receiver<T> {
-    /// Asynchronously receive a value from the channel, returning an error if all senders have been
-    /// dropped. If the channel is empty, the returned future will yield to the async runtime.
+    /// Asynchronously receive a value from the channel, returning
+    /// an error if all senders have been dropped.
+    ///
+    /// If the channel is empty, the returned future will yield
+    /// to the async runtime.
     pub fn recv(&self) -> RecvFut<'_, T> {
         RecvFut::new(self)
     }
 
-    /// Creates a new [`Sender`] that will send values to this receiver.
+    /// Creates a new [`Sender`] for this receiver.
     pub fn create_sender(&self) -> Sender<T> {
         self.shared.sender_count.fetch_add(1, Ordering::Relaxed);
         Sender {
@@ -80,7 +87,8 @@ impl<T> Receiver<T> {
         }
     }
 
-    /// Returns true if all sneders for this channel have been dropped.
+    /// Returns true if all [`Sender`]s for this channel have been
+    /// dropped.
     pub fn is_disconnected(&self) -> bool {
         self.shared.is_disconnected()
     }
@@ -116,8 +124,11 @@ impl<'a, T> RecvFut<'a, T> {
         }
     }
 
-    /// Reset the hook, clearing it and removing it from the waiting receivers queue and waking
-    /// another receiver if this receiver has been woken, so as not to cause any missed wakeups.
+    /// Resets the hook, clearing it and removing it from the
+    /// waiting receivers queue,
+    ///
+    /// Wakes another receiver if this receiver has been woken,
+    /// so as not to cause any missed wakeups.
     ///
     /// This is called on drop.
     fn reset_hook(&mut self) {
@@ -170,11 +181,12 @@ impl<'a, T> Future for RecvFut<'a, T> {
 
             self.receiver.shared.chan.lock().waiting.push_back(hook);
 
-            // to avoid a missed wakeup, re-check disconnect status here because the channel might have
-            // gotten shut down before we had a chance to push our hook
+            // to avoid a missed wakeup, re-check disconnect status here because the channel
+            // might have gotten shut down before we had a chance to push our hook
             return if self.receiver.shared.is_disconnected() {
-                // and now, to avoid a race condition between the first recv attempt and the disconnect check we
-                // just performed, attempt to recv again just in case we missed something.
+                // and now, to avoid a race condition between the first recv attempt and the
+                // disconnect check we just performed, attempt to recv again just in case we
+                // missed something.
                 Poll::Ready(
                     self.receiver
                         .shared
