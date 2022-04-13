@@ -28,7 +28,7 @@ use crate::{
 /// allows an actor to retrieve its own reference.
 ///
 /// [`Context::address`]: crate::Context::address
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Address<A: Actor> {
     id: u64,
     tx: MailboxSender<A>,
@@ -50,7 +50,7 @@ pub struct Address<A: Actor> {
 /// must first be made into a strong [`Address`] through the
 /// [`WeakAddress::upgrade`] method which only succeeds when the
 /// actor is still alive.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct WeakAddress<A: Actor> {
     id: u64,
     tx: WeakMailboxSender<A>,
@@ -112,24 +112,6 @@ impl<A: Actor> WeakAddress<A> {
     /// been dropped.
     pub fn upgrade(&self) -> Option<Address<A>> {
         self.tx.upgrade().map(|tx| Address { id: self.id, tx })
-    }
-}
-
-impl<A: Actor> Clone for Address<A> {
-    fn clone(&self) -> Self {
-        Self {
-            id: self.id,
-            tx: self.tx.clone(),
-        }
-    }
-}
-
-impl<A: Actor> Clone for WeakAddress<A> {
-    fn clone(&self) -> Self {
-        Self {
-            id: self.id,
-            tx: self.tx.clone(),
-        }
     }
 }
 
