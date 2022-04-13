@@ -2,30 +2,8 @@ use std::marker::PhantomData;
 
 use futures_core::future::BoxFuture;
 
-use super::OneshotSender;
+use super::{OneshotSender, EnvelopeProxy};
 use crate::{Actor, Context, Handler, Message};
-
-/// A crate-internal helper trait for erasing different envelope
-/// types in an actor's mailbox.
-///
-/// Heap-allocated envelope proxies will be sent to mailboxes and
-/// are free to implement custom strategies for message handling
-/// in [`EnvelopeProxy::deliver`] without the actor needing to know
-/// the internals.
-pub trait EnvelopeProxy: Send {
-    /// The actor type the envelope is directed at.
-    type Actor: Actor;
-
-    /// Delivers the message in the envelope for processing.
-    ///
-    /// The internal implementation is responsible for handling
-    /// result value passing and other mechanics.
-    fn deliver<'a>(
-        self: Box<Self>,
-        actor: &'a mut Self::Actor,
-        ctx: &'a mut Context<Self::Actor>,
-    ) -> BoxFuture<'a, ()>;
-}
 
 /// A fire-and-forget envelope for implementing the *tell* strategy.
 pub struct ForgettingEnvelope<A, M> {
