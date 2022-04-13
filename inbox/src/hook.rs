@@ -46,7 +46,9 @@ impl<T, S: ?Sized> SenderHook<T, S> {
 /// A [`ReceiverHook`] represents the signal that a waiting
 /// receiver will insert into the `waiting` list.
 pub struct ReceiverHook<T, S: ?Sized> {
-    _marker: PhantomData<T>,
+    // Use `Spinlock<T>` to keep Send and Sync
+    // bounds analog to flume
+    _marker: PhantomData<Spinlock<T>>,
     signal: S,
 }
 

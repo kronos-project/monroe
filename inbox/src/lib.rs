@@ -538,4 +538,20 @@ mod tests {
 
         assert!(wtx.upgrade().is_none());
     }
+
+    #[tokio::test]
+    async fn receive_messages_after_disconnect() {
+        let (tx, rx) = unbounded();
+
+        for i in 0..100 {
+            tx.send(i).await.unwrap();
+        }
+
+        drop(tx);
+        assert!(rx.is_disconnected());
+
+        for i in 0..100 {
+            assert_eq!(rx.recv().await, Ok(i));
+        }
+    }
 }
