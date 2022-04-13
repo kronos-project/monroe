@@ -18,7 +18,7 @@ pub struct AsyncSignal {
 }
 
 impl AsyncSignal {
-    pub fn new(cx: &Context) -> Self {
+    pub fn new(cx: &Context<'_>) -> Self {
         AsyncSignal {
             waker: SpinLock::new(cx.waker().clone()),
             woken: AtomicBool::new(false),

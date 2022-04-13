@@ -5,8 +5,9 @@
 //! additional features that we need for monroe.
 //!
 //! [`flume`]: https://docs.rs/flume
+
+#![deny(missing_docs, rust_2018_idioms, rustdoc::broken_intra_doc_links)]
 #![forbid(unsafe_code)]
-#![deny(missing_docs)]
 
 mod hook;
 
@@ -84,6 +85,7 @@ pub(crate) struct Chan<T> {
     // first element of the tuple is the cap. The latter element
     // is a List of senders that are waiting for the channel to
     // becompe empty
+    #[allow(clippy::type_complexity)]
     sending: Option<(NonZeroUsize, SignalVec<SenderHook<T, dyn Signal>>)>,
     // queue contains all items that are waiting for a receiver
     // to pick them up.
@@ -416,7 +418,7 @@ mod tests {
                 self.0.load(Ordering::SeqCst)
             }
 
-            fn ctx(&self) -> Context {
+            fn ctx(&self) -> Context<'_> {
                 Context::from_waker(&self.1)
             }
         }

@@ -1,8 +1,7 @@
+pub use monroe_inbox::{bounded, unbounded};
+
 mod envelope;
 pub use self::envelope::*;
-
-mod channel;
-pub use self::channel::{bounded, unbounded};
 
 // TODO: The end goal is not having to allocate every `EnvelopeProxy::deliver`
 //       future on the heap. This requires us to assign a GAT to the trait
@@ -17,9 +16,9 @@ pub use self::channel::{bounded, unbounded};
 //       in our mailboxes for minimal memory footprint.
 pub type Letter<A> = Box<dyn EnvelopeProxy<Actor = A>>;
 
-pub type MailboxSender<A> = channel::Sender<Letter<A>>;
-pub type WeakMailboxSender<A> = channel::WeakSender<Letter<A>>;
-pub type MailboxReceiver<A> = channel::Receiver<Letter<A>>;
+pub type MailboxSender<A> = monroe_inbox::Sender<Letter<A>>;
+pub type WeakMailboxSender<A> = monroe_inbox::WeakSender<Letter<A>>;
+pub type MailboxReceiver<A> = monroe_inbox::Receiver<Letter<A>>;
 
 pub type OneshotSender<T> = tokio::sync::oneshot::Sender<T>;
 pub type OneshotReceiver<T> = tokio::sync::oneshot::Receiver<T>;

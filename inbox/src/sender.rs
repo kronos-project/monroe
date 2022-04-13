@@ -42,33 +42,6 @@ impl<T> fmt::Display for SendError<T> {
 
 impl<T> std::error::Error for SendError<T> {}
 
-/// [`WeakSender`] is a version of a [`Sender`] that won't count
-/// into the channels sender count.
-///
-/// Thus, if for a channel there only exist [`WeakSender`]s, it
-/// will be disconnected. Similar to the nature of [`Arc`] and
-/// [`Weak`].
-///
-/// To use a [`WeakSender`], it first has to be upgraded into a
-/// [`Sender`] using the [`WeakSender::upgrade`] method.
-pub struct WeakSender<T> {
-    shared: Weak<Shared<T>>,
-}
-
-impl<T> WeakSender<T> {
-    /// Attempts to upgrade this [`WeakSender`] into a [`Sender`],
-    /// which can then be used to send messages into this channel.
-    ///
-    /// This method might fail (return [`None`]),
-    /// if the channel was already dropped.
-    pub fn upgrade(&self) -> Option<Sender<T>> {
-        self.shared.upgrade().map(|shared| {
-            shared.sender_count.fetch_add(1, Ordering::Relaxed);
-            Sender { shared }
-        })
-    }
-}
-
 /// The transmitting end of a channel.
 pub struct Sender<T> {
     pub(crate) shared: Arc<Shared<T>>,
@@ -111,13 +84,13 @@ impl<T> Clone for Sender<T> {
     fn clone(&self) -> Self {
         self.shared.sender_count.fetch_add(1, Ordering::Relaxed);
         Self {
-            shared: self.shared.clone(),
+            shared: Arc::clone(&self.shared),
         }
     }
 }
 
 impl<T> fmt::Debug for Sender<T> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Sender").finish()
     }
 }
@@ -129,6 +102,47 @@ impl<T> Drop for Sender<T> {
         if self.shared.sender_count.fetch_sub(1, Ordering::Relaxed) == 1 {
             self.shared.disconnect_all();
         }
+    }
+}
+
+/// [`WeakSender`] is a version of a [`Sender`] that won't count
+/// into the channels sender count.
+///
+/// Thus, if for a channel there only exist [`WeakSender`]s, it
+/// will be disconnected. Similar to the nature of [`Arc`] and
+/// [`Weak`].
+///
+/// To use a [`WeakSender`], it first has to be upgraded into a
+/// [`Sender`] using the [`WeakSender::upgrade`] method.
+pub struct WeakSender<T> {
+    shared: Weak<Shared<T>>,
+}
+
+impl<T> WeakSender<T> {
+    /// Attempts to upgrade this [`WeakSender`] into a [`Sender`],
+    /// which can then be used to send messages into this channel.
+    ///
+    /// This method might fail (return [`None`]),
+    /// if the channel was already dropped.
+    pub fn upgrade(&self) -> Option<Sender<T>> {
+        self.shared.upgrade().map(|shared| {
+            shared.sender_count.fetch_add(1, Ordering::Relaxed);
+            Sender { shared }
+        })
+    }
+}
+
+impl<T> Clone for WeakSender<T> {
+    fn clone(&self) -> Self {
+        Self {
+            shared: Weak::clone(&self.shared),
+        }
+    }
+}
+
+impl<T> fmt::Debug for WeakSender<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("WeakSender").finish()
     }
 }
 
