@@ -56,11 +56,13 @@ pub use self::new::NewActor;
 /// As a result, the implementation of [`Actor::stopped`] should
 /// be crafted with the idea in mind that an actor may have just
 /// been interrupted right in the middle of a [`Message`] [`Handler`].
+/// It should assume no particular logical invariants on the actor
+/// object as these may have been broken depending on the cause
+/// behind the actor shutdown.
 ///
-/// Ideally, the implementation of [`Actor::stopped`] should assume
-/// no particular logical invariants on the actor object as these
-/// may have been broken depending on the cause behind the actor
-/// shutdown.
+/// Note that message handlers on the other hand can assume any
+/// logical invariants are upheld at any given point unless they
+/// temporarily break them on their own.
 ///
 /// [exception safety]: https://github.com/rust-lang/rfcs/blob/master/text/1236-stabilize-catch-panic.md
 // TODO: Explain how actors are started.

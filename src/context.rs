@@ -72,7 +72,14 @@ fn next_actor_id() -> u64 {
     ID.fetch_add(1, Ordering::Relaxed)
 }
 
-/// TODO
+/// The execution context of an [`Actor`] type.
+///
+/// Each actor executes within its own context. It is exposed to
+/// its actor in [`Actor::starting`] and [`Handler::handle`].
+/// Actors may use it to query state or actively influence their
+/// own execution.
+///
+/// [`Handler::handle`]: crate::Handler::handle
 #[derive(Debug)]
 pub struct Context<A: Actor> {
     id: u64,
@@ -221,7 +228,7 @@ impl<S: Supervisor<NA>, NA: NewActor> Runner<S, NA> {
                 continue 'main;
             }
 
-            // If the actor has not already been stopped, it is not considered operating.
+            // If the actor has not already been stopped, it is now considered operating.
             if !self.context.state.stopping() {
                 self.context.state = ActorState::Operating;
             } else {
@@ -229,9 +236,8 @@ impl<S: Supervisor<NA>, NA: NewActor> Runner<S, NA> {
                 continue 'main;
             }
 
-            // Poll the inbox for new messages to process.
+            // Poll the inbox for new messages to process until no senders are left.
             while let Ok(letter) = self.context.mailbox.recv().await {
-                // Poll from the mailbox until all ref-counted senders are gone.
                 if let Err(panic) =
                     panic_safe(letter.deliver(&mut self.actor, &mut self.context)).await
                 {
