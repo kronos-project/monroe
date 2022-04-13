@@ -79,6 +79,11 @@ impl<T> Receiver<T> {
             shared: self.shared.clone(),
         }
     }
+
+    /// Returns true if all sneders for this channel have been dropped.
+    pub fn is_disconnected(&self) -> bool {
+        self.shared.is_disconnected()
+    }
 }
 
 impl<T> fmt::Debug for Receiver<T> {

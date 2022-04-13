@@ -7,8 +7,8 @@ use std::{
 
 pub type Spinlock<T> = spin::Mutex<T>;
 
-/// A [`SenderHook`] represents the signal that a waiting
-/// sender will insert into the `sending` list.
+/// A [`SenderHook`] represents the signal that a waiting sender
+/// will insert into the `sending` list.
 pub struct SenderHook<T, S: ?Sized> {
     pub(crate) slot: Spinlock<Option<T>>,
     pub(crate) signal: S,
@@ -71,8 +71,8 @@ impl<T> ReceiverHook<T, AsyncSignal> {
         if !self.signal.waker.lock().will_wake(cx_waker) {
             *self.signal.waker.lock() = cx_waker.clone();
 
-            // avoid the edge case where the waker was woken
-            // just before the wakers were swapped.
+            // avoid the edge case where the waker was woken just
+            // before the wakers were swapped.
             if self.signal.woken.load(Ordering::SeqCst) {
                 cx_waker.wake_by_ref();
             }

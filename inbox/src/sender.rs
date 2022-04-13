@@ -9,7 +9,7 @@ use std::{
     fmt,
     future::Future,
     pin::Pin,
-    sync::{atomic::Ordering, Arc},
+    sync::{atomic::Ordering, Arc, Weak},
     task::Poll,
 };
 
@@ -39,22 +39,58 @@ impl<T> fmt::Display for SendError<T> {
 
 impl<T> std::error::Error for SendError<T> {}
 
+/// [`WeakSender`] is a version of a [`Sender`] that won't count
+/// into the channels sender count.
+///
+/// Thus, if for a channel there only exist [`WeakSender`]s, it
+/// will be disconnected. Similar to the nature of [`Arc`] and
+/// [`Weak`].
+///
+/// To use a [`WeakSender`], it first has to be upgraded into a
+/// [`Sender`] using the [`WeakSender::upgrade`] method.
+pub struct WeakSender<T> {
+    shared: Weak<Shared<T>>,
+}
+
+impl<T> WeakSender<T> {
+    /// Attempts to upgrade this [`WeakSender`] into a [`Sender`],
+    /// which can then be used to send messages into this channel.
+    ///
+    /// This method might fail (return [`None`]),
+    /// if the channel was already dropped.
+    pub fn upgrade(&self) -> Option<Sender<T>> {
+        self.shared.upgrade().map(|shared| {
+            shared.sender_count.fetch_add(1, Ordering::Relaxed);
+            Sender { shared }
+        })
+    }
+}
+
 /// The transmitting end of a channel.
 pub struct Sender<T> {
     pub(crate) shared: Arc<Shared<T>>,
 }
 
 impl<T> Sender<T> {
-    /// Asynchronously send a value into the channel, returning an error if all receivers have been
-    /// dropped. If the channel is bounded and is full, the returned future will yield to the async
-    /// runtime.
+    /// Asynchronously send a value into the channel, returning
+    /// an error if all receivers have been dropped. If the
+    /// channel is bounded and is full, the returned future will
+    /// yield to the async runtime.
     ///
-    /// In the current implementation, the returned future will not yield to the async runtime if the
-    /// channel is unbounded. This may change in later versions.
+    /// In the current implementation, the returned future will
+    /// not yield to the async runtime if the channel is
+    /// unbounded. This may change in later versions.
     pub fn send(&self, msg: T) -> SendFut<'_, T> {
         SendFut {
             sender: self,
             hook: Some(SendState::NotYetSent(msg)),
+        }
+    }
+
+    /// Creates a new [`WeakSender`] for this channel.
+    pub fn downgrade(&self) -> WeakSender<T> {
+        WeakSender {
+            shared: Arc::downgrade(&self.shared),
         }
     }
 
@@ -65,8 +101,10 @@ impl<T> Sender<T> {
 }
 
 impl<T> Clone for Sender<T> {
-    /// Clone this sender. [`Sender`] acts as a handle to the ending a channel. Remaining channel
-    /// contents will only be cleaned up when all senders and the receiver have been dropped.
+    /// Clone this sender. [`Sender`] acts as a handle to the
+    /// ending a channel. Remaining channel contents will only be
+    /// cleaned up when all senders and the receiver have been
+    /// dropped.
     fn clone(&self) -> Self {
         self.shared.sender_count.fetch_add(1, Ordering::Relaxed);
         Self {
@@ -83,7 +121,8 @@ impl<T> fmt::Debug for Sender<T> {
 
 impl<T> Drop for Sender<T> {
     fn drop(&mut self) {
-        // Notify receivers that all senders have been dropped if the number of senders drops to 0.
+        // Notify receivers that all senders have been dropped if
+        // the number of senders drops to 0.
         if self.shared.sender_count.fetch_sub(1, Ordering::Relaxed) == 1 {
             self.shared.disconnect_all();
         }
@@ -93,7 +132,8 @@ impl<T> Drop for Sender<T> {
 pin_project! {
     /// A future that sends a value into a channel.
     ///
-    /// Can be created via [`Sender::send_async`] or [`Sender::into_send_async`].
+    /// Can be created via [`Sender::send_async`] or
+    /// [`Sender::into_send_async`].
     #[must_use = "futures/streams/sinks do nothing unless you `.await` or poll them"]
     pub struct SendFut<'a, T> {
         sender: &'a Sender<T>,
@@ -109,8 +149,8 @@ pin_project! {
 }
 
 impl<T> SendFut<'_, T> {
-    /// Reset the hook, clearing it and removing it from the waiting sender's queue.
-    /// This is called on drop.
+    /// Reset the hook, clearing it and removing it from the
+    /// waiting sender's queue.  This is called on drop.
     fn reset_hook(&mut self) {
         let hook = match self.hook.take() {
             Some(SendState::QueuedItem(hook)) => hook,
@@ -119,8 +159,8 @@ impl<T> SendFut<'_, T> {
 
         let mut chan = self.sender.shared.chan.lock();
 
-        // this can't be `None`, because `QueuedItem` state can only exist if
-        // we have to wait for free capacity
+        // this can't be `None`, because `QueuedItem` state can
+        // only exist if we have to wait for free capacity
         let (_, sending) = chan.sending.as_mut().unwrap();
 
         // remove all waiting signals that are ours
@@ -134,8 +174,8 @@ impl<T> Future for SendFut<'_, T> {
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> Poll<Self::Output> {
         // if the state of this future is `QueuedItem`, it means,
-        // that this is the second poll, and we were probably woken
-        // up by the executor
+        // that this is the second poll, and we were probably
+        // woken up by the executor
         if let Some(SendState::QueuedItem(hook)) = self.hook.as_ref() {
             // if no item in our hook, item was send successfully
             if hook.is_empty() {
@@ -179,9 +219,10 @@ impl<T> Future for SendFut<'_, T> {
                 chan.sending.as_mut().unwrap().1.push_back(hook.clone());
                 drop(chan);
 
-                // when we "block"/wait, we update our state so when
-                // we get woken up again, we jump into the first `if` clause
-                // and try to pop the item from the queue
+                // when we "block"/wait, we update our state so
+                // when we get woken up again, we jump into the
+                // first `if` clause and try to pop the item from
+                // the queue
                 **this_hook = Some(SendState::QueuedItem(hook));
                 Poll::Pending
             });

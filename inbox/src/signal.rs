@@ -44,8 +44,8 @@ impl<T> SenderHook<T, AsyncSignal> {
         if !self.signal.waker.lock().will_wake(cx_waker) {
             *self.signal.waker.lock() = cx_waker.clone();
 
-            // Avoid the edge case where the waker was woken just before the wakers were
-            // swapped.
+            // Avoid the edge case where the waker was woken just
+            // before the wakers were swapped.
             if self.signal.woken.load(Ordering::SeqCst) {
                 cx_waker.wake_by_ref();
             }

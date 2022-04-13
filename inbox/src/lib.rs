@@ -1,14 +1,12 @@
-//! Implementation of a custom mpsc channel that is based on [`flume`].
+//! Implementation of a custom mpsc channel that is based on
+//! [`flume`].
 //!
-//! This is mostly a stripped version of [`flume`] with some additional features
-//! that we need for monroe.
+//! This is mostly a stripped version of [`flume`] with some
+//! additional features that we need for monroe.
 //!
 //! [`flume`]: https://docs.rs/flume
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
-
-// FIXME: optimize code under the assumption that there is only one `Receiver`,
-// e.g. replacing `waiting` list with a single instance.
 
 mod hook;
 mod signal;
@@ -33,10 +31,13 @@ use std::{
 
 /// Create a channel with no maximum capacity.
 ///
-/// Create an unbounded channel with a [`Sender`] and [`Receiver`] connected to each end respectively. Values sent in
-/// one end of the channel will be received on the other end. The channel is thread-safe, and both [`Sender`] and
-/// [`Receiver`] may be sent to or shared between threads as necessary. In addition, both [`Sender`] and [`Receiver`]
-/// may be cloned.
+/// Create an unbounded channel with a [`Sender`] and
+/// [`Receiver`] connected to each end respectively. Values sent
+/// in one end of the channel will be received on the other end.
+/// The channel is thread-safe, and both [`Sender`] and
+/// [`Receiver`] may be sent to or shared between threads as
+/// necessary. In addition, both [`Sender`] and [`Receiver`] may
+/// be cloned.
 pub fn unbounded<T>() -> (Sender<T>, Receiver<T>) {
     let shared = Arc::new(Shared::new(None));
     (
@@ -49,17 +50,20 @@ pub fn unbounded<T>() -> (Sender<T>, Receiver<T>) {
 
 /// Create a channel with a maximum capacity.
 ///
-/// Create a bounded channel with a [`Sender`] and [`Receiver`] connected to each end respectively. Values sent in one
-/// end of the channel will be received on the other end. The channel is thread-safe, and both [`Sender`] and
-/// [`Receiver`] may be sent to or shared between threads as necessary. In addition, both [`Sender`] and [`Receiver`]
-/// may be cloned.
+/// Create a bounded channel with a [`Sender`] and [`Receiver`]
+/// connected to each end respectively. Values sent in one end of
+/// the channel will be received on the other end. The channel is
+/// thread-safe, and both [`Sender`] and [`Receiver`] may be sent
+/// to or shared between threads as necessary.
 ///
-/// Unlike an [`unbounded`] channel, if there is no space left for new messages, calls to
-/// [`Sender::send`] will block (unblocking once a receiver has made space). If blocking behaviour
-/// is not desired, [`Sender::try_send`] may be used.
+/// Unlike an [`unbounded`] channel, if there is no space left
+/// for new messages, calls to [`Sender::send`] will block
+/// (unblocking once a receiver has made space). If blocking
+/// behaviour is not desired, [`Sender::try_send`] may be used.
 ///
-/// Unlike `std::sync::mpsc`, this channel does not support channels with a capacity of 0.
-/// Calling this method with `0` as the cap will lead to a panic.
+/// Unlike `std::sync::mpsc`, this channel does not support
+/// channels with a capacity of 0.  Calling this method with `0`
+/// as the cap will lead to a panic.
 pub fn bounded<T>(cap: usize) -> (Sender<T>, Receiver<T>) {
     let cap = NonZeroUsize::new(cap).expect("Tried to create a channel with 0 capacity");
     let shared = Arc::new(Shared::new(Some(cap)));
@@ -74,25 +78,28 @@ pub fn bounded<T>(cap: usize) -> (Sender<T>, Receiver<T>) {
 pub(crate) type SignalVec<T> = VecDeque<Arc<T>>;
 
 pub(crate) struct Chan<T> {
-    // `sending` is true if this is a bounded channel and the first element
-    // of the tuple is the cap. The latter element is a List of senders that are waiting
-    // for the channel to becompe empty
+    // `sending` is true if this is a bounded channel and the
+    // first element of the tuple is the cap. The latter element
+    // is a List of senders that are waiting for the channel to
+    // becompe empty
     sending: Option<(NonZeroUsize, SignalVec<SenderHook<T, dyn Signal>>)>,
-    // queue contains all items that are waiting for a receiver to
-    // pick them up.
+    // queue contains all items that are waiting for a receiver
+    // to pick them up.
     queue: VecDeque<T>,
-    // `waiting` contains all current receivers.
-    // The `Hook` inside is responsible for telling the receiver
-    // that a message is ready to be taken out of the `queue`
+    // `waiting` contains all current receivers.  The `Hook`
+    // inside is responsible for telling the receiver that a
+    // message is ready to be taken out of the `queue`
     waiting: SignalVec<ReceiverHook<T, dyn Signal>>,
 }
 
 impl<T> Chan<T> {
-    /// This method will go through every waiting sender in the `waiting` list,
-    /// take their message, fire their signal, and push the message into `queue`, until
-    /// the capacity of this channel has reached.
+    /// This method will go through every waiting sender in the
+    /// `waiting` list, take their message, fire their signal,
+    /// and push the message into `queue`, until the capacity of
+    /// this channel has reached.
     ///
-    /// If `pull_extra` is `true`, the capacity will be increased by one.
+    /// If `pull_extra` is `true`, the capacity will be increased
+    /// by one.
     fn pull_pending(&mut self, pull_extra: bool) {
         let (cap, sending) = match &mut self.sending {
             Some(x) => x,
@@ -148,8 +155,9 @@ impl<T> Shared<T> {
         self.disconnected.load(Ordering::SeqCst)
     }
 
-    /// Disconnect anything listening on this channel (this will not prevent receivers receiving
-    /// msgs that have already been sent)
+    /// Disconnect anything listening on this channel (this will
+    /// not prevent receivers receiving msgs that have already
+    /// been sent)
     fn disconnect_all(&self) {
         self.disconnected.store(true, Ordering::Relaxed);
 
@@ -167,8 +175,8 @@ impl<T> Shared<T> {
         });
     }
 
-    /// Returns `Ok(None)` if there's currently no message available
-    /// and no do_block closure was supplied.
+    /// Returns `Ok(None)` if there's currently no message
+    /// available and no do_block closure was supplied.
     pub fn recv<E: From<RecvError>, R: From<Result<T, E>>>(
         &self,
         do_block: impl FnOnce(MutexGuard<'_, Chan<T>>) -> R,
@@ -230,9 +238,9 @@ impl<T> Shared<T> {
             return R::from(Ok(()));
         }
 
-        // if there are no waiting receivers,
-        // we will insert the message into the queue,
-        // as long as the capacity is not reached
+        // if there are no waiting receivers, we will insert the
+        // message into the queue, as long as the capacity is not
+        // reached
         if chan
             .sending
             .as_ref()
@@ -502,5 +510,32 @@ mod tests {
 
         t.join().unwrap();
     }
-    fn foo() {}
+
+    #[tokio::test]
+    async fn downgrade_and_upgrade_sender() {
+        let (tx, rx) = unbounded();
+
+        tx.send(1).await.unwrap();
+
+        let wtx = tx.downgrade();
+        tx.send(2).await.unwrap();
+        wtx.upgrade().unwrap().send(3).await.unwrap();
+
+        assert_eq!(rx.recv().await, Ok(1));
+        assert_eq!(rx.recv().await, Ok(2));
+        assert_eq!(rx.recv().await, Ok(3));
+    }
+
+    #[test]
+    fn weak_sender_does_not_stop_dropping() {
+        let (tx, rx) = unbounded::<()>();
+
+        let wtx = tx.downgrade();
+        drop(tx);
+
+        assert!(rx.is_disconnected());
+        drop(rx);
+
+        assert!(wtx.upgrade().is_none());
+    }
 }
