@@ -6,6 +6,9 @@ use crate::{Actor, Context};
 mod messages;
 pub use self::messages::*;
 
+mod stream;
+pub use self::stream::*;
+
 /// A crate-internal helper trait for erasing different envelope
 /// types in an actor's mailbox.
 ///

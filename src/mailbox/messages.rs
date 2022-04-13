@@ -5,7 +5,7 @@ use futures_core::future::BoxFuture;
 use super::{OneshotSender, EnvelopeProxy};
 use crate::{Actor, Context, Handler, Message};
 
-/// A fire-and-forget envelope for implementing the *tell* strategy.
+/// A fire-and-forget message for implementing the *tell* strategy.
 pub struct ForgettingEnvelope<A, M> {
     message: M,
     _a: PhantomData<fn() -> A>,
@@ -38,7 +38,7 @@ impl<A: Actor + Handler<M>, M: Message> EnvelopeProxy for ForgettingEnvelope<A, 
     }
 }
 
-/// An envelope that returns the response to a message through
+/// A message that returns the response to a message through
 /// a oneshot channel.
 pub struct ReturningEnvelope<A, M: Message> {
     message: M,
