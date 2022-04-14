@@ -210,7 +210,7 @@ impl<T> Shared<T> {
         })
     }
 
-    pub fn send<R: From<Result<(), SendError<T>>>>(
+    pub fn send<E: From<SendError<T>>, R: From<Result<(), E>>>(
         &self,
         msg: T,
         do_block: impl FnOnce(T, MutexGuard<'_, Chan<T>>) -> R,
@@ -219,7 +219,7 @@ impl<T> Shared<T> {
 
         // disconnected, there's nothing to send
         if self.is_disconnected() {
-            return R::from(Err(SendError(msg)));
+            return R::from(Err(E::from(SendError(msg))));
         }
 
         // if there are waiting receivers,
@@ -256,6 +256,13 @@ impl<T> Shared<T> {
 
         // need to wait
         do_block(msg, chan)
+    }
+
+    pub fn try_send(&self, msg: T) -> Result<(), TrySendError<T>> {
+        self.send(msg, |msg, chan| {
+            drop(chan);
+            Err(TrySendError::Full(msg))
+        })
     }
 }
 
@@ -557,5 +564,22 @@ mod tests {
         for i in 0..100 {
             assert_eq!(rx.recv().await, Ok(i));
         }
+    }
+
+    #[tokio::test]
+    async fn try_send() {
+        let (tx, rx) = bounded(1);
+
+        tx.try_send(1).unwrap();
+        assert_eq!(tx.try_send(2), Err(TrySendError::Full(2)));
+
+        assert_eq!(rx.recv().await, Ok(1));
+
+        assert_eq!(tx.try_send(3), Ok(()));
+
+        assert_eq!(rx.recv().await, Ok(3));
+
+        drop(rx);
+        assert_eq!(tx.try_send(4), Err(TrySendError::Disconnected(4)));
     }
 }

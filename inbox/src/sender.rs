@@ -1,3 +1,10 @@
+use crate::{
+    hook::SenderHook,
+    signal::{AsyncSignal, Signal},
+    Shared,
+};
+use futures_core::FusedFuture;
+use pin_project_lite::pin_project;
 use std::{
     fmt,
     future::Future,
@@ -6,18 +13,11 @@ use std::{
     task::Poll,
 };
 
-use futures_core::FusedFuture;
-use pin_project_lite::pin_project;
-
-use crate::{
-    hook::SenderHook,
-    signal::{AsyncSignal, Signal},
-    Shared,
-};
-
 /// Error produced by the sender when trying to send a value to
 /// an already dropped receiver.
-#[derive(Copy, Clone, PartialEq, Eq)]
+/// An error that may be emitted when attempting to send a value into a channel on a sender when
+/// all receivers are dropped.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct SendError<T>(pub T);
 
 impl<T> SendError<T> {
@@ -28,19 +28,43 @@ impl<T> SendError<T> {
     }
 }
 
-impl<T> fmt::Debug for SendError<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        "SendError(..)".fmt(f)
-    }
-}
-
 impl<T> fmt::Display for SendError<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         "sending on a closed channel".fmt(f)
     }
 }
 
-impl<T> std::error::Error for SendError<T> {}
+impl<T: fmt::Debug> std::error::Error for SendError<T> {}
+
+/// An error that may be emitted when attempting to send a
+/// value into a channel on a sender when the channel
+/// is full or all receivers are dropped.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum TrySendError<T> {
+    /// The channel the message is sent on has a finite capacity
+    /// and was full when the send was attempted.
+    Full(T),
+    /// All channel receivers were dropped and so the message
+    /// has nobody to receive it.
+    Disconnected(T),
+}
+
+impl<T> fmt::Display for TrySendError<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            TrySendError::Full(_) => f.write_str("sending on a full channel"),
+            TrySendError::Disconnected(_) => f.write_str("sending on a closed channel"),
+        }
+    }
+}
+
+impl<T: fmt::Debug> std::error::Error for TrySendError<T> {}
+
+impl<T> From<SendError<T>> for TrySendError<T> {
+    fn from(SendError(msg): SendError<T>) -> Self {
+        TrySendError::Disconnected(msg)
+    }
+}
 
 /// The transmitting end of a channel.
 pub struct Sender<T> {
@@ -61,6 +85,17 @@ impl<T> Sender<T> {
             sender: self,
             hook: Some(SendState::NotYetSent(msg)),
         }
+    }
+
+    /// Attempt to send a value into the channel.
+    ///
+    /// If the channel is bounded and full, or all receivers
+    /// have been dropped, an error is returned.
+    ///
+    /// If the channel associated with this sender is unbounded,
+    /// this method has the same behaviour as Sender::send.
+    pub fn try_send(&self, msg: T) -> Result<(), TrySendError<T>> {
+        self.shared.try_send(msg)
     }
 
     /// Creates a new [`WeakSender`] for this channel.
