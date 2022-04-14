@@ -27,9 +27,6 @@ pub use self::stream::StreamHandler;
 /// to describe the construction of an actor object for
 /// supervisor-triggered restarts.
 ///
-/// When an actor is restarted, outstanding messages which
-/// were intended for the old actor will be discarded.
-///
 /// # Handling messages
 ///
 /// Actors may have many implementations of the [`Handler`]

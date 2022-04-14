@@ -185,7 +185,7 @@ impl<T> Shared<T> {
         loop {
             chan.pull_pending(false);
 
-            if chan.queue.len() == 0 {
+            if chan.queue.is_empty() {
                 break;
             }
 
