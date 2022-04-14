@@ -179,6 +179,20 @@ impl<T> Shared<T> {
         });
     }
 
+    pub fn clear_channel(&self) {
+        let mut chan = self.chan.lock();
+
+        loop {
+            chan.pull_pending(false);
+
+            if chan.queue.len() == 0 {
+                break;
+            }
+
+            chan.queue.clear();
+        }
+    }
+
     /// Returns `Ok(None)` if there's currently no message
     /// available and no do_block closure was supplied.
     pub fn recv<E: From<RecvError>, R: From<Result<T, E>>>(
@@ -581,5 +595,25 @@ mod tests {
 
         drop(rx);
         assert_eq!(tx.try_send(4), Err(TrySendError::Disconnected(4)));
+    }
+
+    #[tokio::test]
+    async fn clear_channel() {
+        let (tx, rx) = bounded(3);
+
+        tokio::spawn(async move {
+            for idx in 0..100 {
+                tx.send(idx).await.unwrap();
+            }
+        });
+
+        assert_eq!(rx.recv().await, Ok(0));
+
+        rx.clear_channel();
+
+        let tx = rx.create_sender();
+        tx.send(1337).await.unwrap();
+
+        assert_eq!(rx.recv().await, Ok(1337));
     }
 }

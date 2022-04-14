@@ -79,6 +79,13 @@ impl<T> Receiver<T> {
         RecvFut::new(self)
     }
 
+    /// Pulls all pending messages from waiting senders, puts
+    /// them into the message queue, and then clears the message
+    /// queue, so the channel becomes empty.
+    pub fn clear_channel(&self) {
+        self.shared.clear_channel()
+    }
+
     /// Creates a new [`Sender`] for this receiver.
     pub fn create_sender(&self) -> Sender<T> {
         self.shared.sender_count.fetch_add(1, Ordering::Relaxed);
