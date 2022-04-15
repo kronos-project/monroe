@@ -7,7 +7,7 @@ use crate::{Actor, Context, Handler, Message};
 
 /// A fire-and-forget message for implementing the *tell* strategy.
 pub struct ForgettingEnvelope<A, M> {
-    message: M,
+    pub message: M,
     _a: PhantomData<fn() -> A>,
 }
 
@@ -41,7 +41,7 @@ impl<A: Actor + Handler<M>, M: Message> EnvelopeProxy for ForgettingEnvelope<A, 
 /// A message that returns the response to a message through
 /// a oneshot channel.
 pub struct ReturningEnvelope<A, M: Message> {
-    message: M,
+    pub message: M,
     tx: OneshotSender<M::Result>,
     _a: PhantomData<fn() -> A>,
 }

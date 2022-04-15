@@ -15,9 +15,7 @@ use std::{
 
 /// Error produced by the sender when trying to send a value to
 /// an already dropped receiver.
-/// An error that may be emitted when attempting to send a value into a channel on a sender when
-/// all receivers are dropped.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SendError<T>(pub T);
 
 impl<T> SendError<T> {
@@ -39,7 +37,7 @@ impl<T: fmt::Debug> std::error::Error for SendError<T> {}
 /// An error that may be emitted when attempting to send a
 /// value into a channel on a sender when the channel
 /// is full or all receivers are dropped.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum TrySendError<T> {
     /// The channel the message is sent on has a finite capacity
     /// and was full when the send was attempted.

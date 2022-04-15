@@ -1,6 +1,8 @@
+pub use monroe_inbox::{SendError as Disconnected, TrySendError as TellError};
+
 use crate::{
-    mailbox::{MailboxSender, WeakMailboxSender},
-    Actor,
+    mailbox::{ForgettingEnvelope, Letter, MailboxSender, WeakMailboxSender},
+    Actor, Handler, Message,
 };
 
 /// A strong reference to an [`Actor`].
@@ -90,6 +92,68 @@ impl<A: Actor> Address<A> {
     pub fn is_disconnected(&self) -> bool {
         self.tx.is_disconnected()
     }
+
+    /// Sends a fire-and-forget [`Message`] to the actor and
+    /// returns immediately.
+    ///
+    /// This does not await an actor's response and will fail
+    /// if the actor is disconnected or its mailbox is full.
+    /// In such cases, the [`TellError`] object transfers
+    /// ownership over the sent message back to the caller.
+    ///
+    /// This method can be used with no regrets - this strategy
+    /// of sending messages can never cause a deadlock.
+    pub fn tell<M>(&self, message: M) -> Result<(), TellError<M>>
+    where
+        M: Message,
+        A: Handler<M>,
+    {
+        let envelope = ForgettingEnvelope::<A, M>::new(message);
+
+        // SAFETY: We always get `ForgettingEnvelope<A, M>` back on error.
+        self.tx.try_send(Box::new(envelope)).map_err(|e| match e {
+            TellError::Full(letter) => {
+                let letter: Box<ForgettingEnvelope<A, M>> = unsafe { downcast_letter(letter) };
+                TellError::Full(letter.message)
+            }
+            TellError::Disconnected(letter) => {
+                let letter: Box<ForgettingEnvelope<A, M>> = unsafe { downcast_letter(letter) };
+                TellError::Disconnected(letter.message)
+            }
+        })
+    }
+
+    /// Sends a fire-and-forget [`Message`] to the actor.
+    ///
+    /// Unlike [`Address::tell`], this method is asynchronous
+    /// and will wait for a free slot in the actor mailbox
+    /// prior to returning.
+    ///
+    /// This also means that actors with bounded mailboxes
+    /// must **beware of deadlocks on cyclic interaction**.
+    ///
+    /// [`Disconnected`] will be returned when the referenced
+    /// actor has shut down and does not accept messages.
+    // TODO: Better name.
+    // TODO: Optional timeout argument to mitigate deadlocks.
+    pub async fn tell_async<M>(&self, message: M) -> Result<(), Disconnected<M>>
+    where
+        M: Message,
+        A: Handler<M>,
+    {
+        let envelope = ForgettingEnvelope::<A, M>::new(message);
+
+        // SAFETY: We always get `ForgettingEnvelope<A, M>` back on error.
+        self.tx
+            .send(Box::new(envelope))
+            .await
+            .map_err(|Disconnected(letter)| {
+                let letter: Box<ForgettingEnvelope<A, M>> = unsafe { downcast_letter(letter) };
+                Disconnected(letter.message)
+            })
+    }
+
+    // TODO: ask/ask_async
 }
 
 impl<A: Actor> WeakAddress<A> {
@@ -132,3 +196,9 @@ impl<A: Actor> PartialEq for WeakAddress<A> {
 }
 
 // TODO: Should (Weak)Address implement Hash?
+
+#[inline(always)]
+unsafe fn downcast_letter<A, T>(letter: Letter<A>) -> Box<T> {
+    let ptr = Box::into_raw(letter);
+    unsafe { Box::from_raw(ptr as *mut T) }
+}
