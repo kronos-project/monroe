@@ -24,7 +24,7 @@ jobs:
       - name: Checkout Code 
         uses: actions/checkout@v2
       - name: Install Rust
-        uses: actions-rs/toolchain@v1
+        uses: zephraph/toolchain@support-toolchain-toml
       - name: Run Tests
         run: cargo test --verbose --workspace
 
@@ -35,7 +35,7 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v2
       - name: Install Rust
-        uses: actions-rs/toolchain@v1
+        uses: zephraph/toolchain@support-toolchain-toml
       - name: Check documentation
         run: cargo rustdoc -- -D warnings
 
@@ -48,7 +48,7 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v2
       - name: Install Rust
-        uses: actions-rs/toolchain@v1
+        uses: zephraph/toolchain@support-toolchain-toml
       - run: cargo clippy --workspace --all-targets --verbose
 
   rustfmt:
@@ -58,5 +58,5 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v2
       - name: Install Rust
-        uses: actions-rs/toolchain@v1
+        uses: zephraph/toolchain@support-toolchain-toml
       - run: cargo fmt --all -- --check
