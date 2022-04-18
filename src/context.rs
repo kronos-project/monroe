@@ -1,6 +1,7 @@
 use std::{
     any::Any,
     future::Future,
+    num::NonZeroUsize,
     ops::ControlFlow,
     panic::AssertUnwindSafe,
     pin::Pin,
@@ -11,9 +12,10 @@ use futures_util::{future::CatchUnwind, FutureExt};
 use tokio::task::JoinHandle;
 
 use crate::{
-    mailbox::MailboxReceiver,
+    mailbox::{self, MailboxReceiver},
     supervisor::{ActorFate, Supervisor},
-    Actor, Address, NewActor,
+    system::ActorSystem,
+    Actor, ActorHandle, Address, NewActor,
 };
 
 /// The current execution state of an actor.
@@ -83,14 +85,16 @@ fn next_actor_id() -> u64 {
 #[derive(Debug)]
 pub struct Context<A: Actor> {
     id: u64,
+    system: ActorSystem,
     mailbox: MailboxReceiver<A>,
     state: ActorState,
 }
 
 impl<A: Actor> Context<A> {
-    pub(crate) fn new(mailbox: MailboxReceiver<A>) -> Self {
+    pub(crate) fn new(system: ActorSystem, mailbox: MailboxReceiver<A>) -> Self {
         Self {
             id: next_actor_id(),
+            system,
             mailbox,
             state: ActorState::Starting,
         }
@@ -131,6 +135,34 @@ impl<A: Actor> Context<A> {
     /// itself during message processing.
     pub fn address(&self) -> Address<A> {
         Address::new(self.id, self.mailbox.create_sender())
+    }
+
+    /// Spawns a child actor to the actor governed by this
+    /// context and returns its [`ActorHandle`].
+    ///
+    /// While child actors also expose the [`ActorSystem`]
+    /// associated with the parent actor, they are not directly
+    /// tracked in the system.
+    ///
+    /// Actors are usually responsible for managing the handles
+    /// of their children in accordance with its own behavior.
+    pub fn spawn_actor<S: Supervisor<NA>, NA: NewActor>(
+        &self,
+        supervisor: S,
+        new_actor: NA,
+        arg: NA::Arg,
+        capacity: Option<NonZeroUsize>,
+    ) -> Result<ActorHandle<NA::Actor>, NA::Error> {
+        let (sender, receiver) = match capacity.or_else(|| self.system.config().mailbox_size) {
+            Some(capacity) => mailbox::bounded(capacity.get()),
+            None => mailbox::unbounded(),
+        };
+        let context = Context::new(self.system.clone(), receiver);
+
+        Ok(ActorHandle {
+            address: Address::new(context.id, sender),
+            handle: context.run(supervisor, new_actor, arg)?,
+        })
     }
 
     // TODO: Support for scheduling messages to the actor.

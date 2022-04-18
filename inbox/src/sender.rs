@@ -1,11 +1,3 @@
-use crate::{
-    hook::SenderHook,
-    signal::{AsyncSignal, Signal},
-    Chan, Shared,
-};
-use futures_core::{ready, FusedFuture};
-use parking_lot::MutexGuard;
-use pin_project_lite::pin_project;
 use std::{
     fmt,
     future::Future,
@@ -14,7 +6,17 @@ use std::{
     task::{self, Poll},
     time::Duration,
 };
+
+use futures_core::{ready, FusedFuture};
+use parking_lot::MutexGuard;
+use pin_project_lite::pin_project;
 use tokio::time::Sleep;
+
+use crate::{
+    hook::SenderHook,
+    signal::{AsyncSignal, Signal},
+    Chan, Shared,
+};
 
 /// Error produced by the sender when trying to send a value to
 /// an already dropped receiver.
