@@ -1,0 +1,62 @@
+name: Rust CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+env:
+  RUST_BACKTRACE: 1
+
+jobs:
+  test:
+    name: Test on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest }
+          - { os: macos-latest }
+          - { os: windows-latest }
+    steps:
+      - name: Checkout Code 
+        uses: actions/checkout@v2
+      - name: Install Rust
+        uses: zephraph/toolchain@support-toolchain-toml
+      - name: Run Tests
+        run: cargo test --verbose --workspace
+
+  check-rustdoc-links:
+    name: Check intra-doc links
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v2
+      - name: Install Rust
+        uses: zephraph/toolchain@support-toolchain-toml
+      - name: Check documentation
+        run: cargo rustdoc -- -D warnings
+
+  clippy:
+    name: Lint with clippy
+    runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: -Dwarnings
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v2
+      - name: Install Rust
+        uses: zephraph/toolchain@support-toolchain-toml
+      - run: cargo clippy --workspace --all-targets --verbose
+
+  rustfmt:
+    name: Verify code formatting
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v2
+      - name: Install Rust
+        uses: zephraph/toolchain@support-toolchain-toml
+      - run: cargo fmt --all -- --check

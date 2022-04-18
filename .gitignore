@@ -3,6 +3,10 @@
 **/*.rs.bk
 Cargo.lock
 
+# Nix
+.direnv
+.envrc
+
 # Miscellaneous system files
 .DS_Store
 *~
