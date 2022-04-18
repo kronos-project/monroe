@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 
 use futures_core::future::BoxFuture;
 
-use super::{OneshotSender, EnvelopeProxy};
+use super::{EnvelopeProxy, OneshotSender};
 use crate::{Actor, Context, Handler, Message};
 
 /// A fire-and-forget message for implementing the *tell* strategy.
