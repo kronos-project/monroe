@@ -7,6 +7,7 @@
     unsafe_op_in_unsafe_fn
 )]
 #![feature(control_flow_enum, generic_associated_types)]
+#![allow(dead_code)] // FIXME: remove once CI passes with this disabled
 
 mod actor;
 pub use self::actor::*;
