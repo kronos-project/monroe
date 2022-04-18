@@ -65,12 +65,15 @@ impl ActorState {
     }
 }
 
+/// The ID of the **root actor** in an [`ActorSystem`].
+pub const ROOT_ACTOR_ID: u64 = 0;
+
 // We assume that no reasonable workload will spawn enough actors
 // to overflow `u64`. Also, we don't care about *which* IDs actors
 // get, we only want them to be unique; `Ordering::Relaxed` suffices.
 #[inline]
 fn next_actor_id() -> u64 {
-    static ID: AtomicU64 = AtomicU64::new(0);
+    static ID: AtomicU64 = AtomicU64::new(1);
     ID.fetch_add(1, Ordering::Relaxed)
 }
 
@@ -94,6 +97,16 @@ impl<A: Actor> Context<A> {
     pub(crate) fn new(system: ActorSystem, mailbox: MailboxReceiver<A>) -> Self {
         Self {
             id: next_actor_id(),
+            system,
+            mailbox,
+            state: ActorState::Starting,
+        }
+    }
+
+    // A specialized method for constructing the root actor with its correct ID.
+    pub(crate) fn new_root(system: ActorSystem, mailbox: MailboxReceiver<A>) -> Self {
+        Self {
+            id: ROOT_ACTOR_ID,
             system,
             mailbox,
             state: ActorState::Starting,

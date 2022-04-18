@@ -2,10 +2,17 @@ use futures_util::future::{ready, Ready};
 
 use crate::{Actor, Context};
 
-pub struct SystemActor {}
+#[derive(Debug)]
+pub struct RootActor {}
+
+impl RootActor {
+    pub fn new(_ctx: &mut Context<Self>) -> Self {
+        Self {}
+    }
+}
 
 // TODO
-impl Actor for SystemActor {
+impl Actor for RootActor {
     type StartingFuture<'a> = Ready<()>;
     type StoppedFuture = Ready<()>;
 

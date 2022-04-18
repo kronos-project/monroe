@@ -37,4 +37,98 @@ pub trait NewActor: Send + 'static {
     ) -> Result<Self::Actor, Self::Error>;
 }
 
-// TODO: Implementation that leverages Default trait impls.
+macro_rules! impl_new_actor_for_fn {
+    ($(($($name:ident: $ty:ident),*)),* $(,)*) => {
+        $(
+            impl<A, $($ty),*> NewActor for fn(&mut Context<A>, $($ty),*) -> A
+            where
+                A: Actor,
+                $($ty: 'static,)*
+            {
+                type Actor = A;
+                type Arg = ($($ty),*);
+                type Error = !;
+
+                fn make(
+                    &mut self,
+                    ctx: &mut Context<Self::Actor>,
+                    arg: Self::Arg,
+                ) -> Result<Self::Actor, Self::Error> {
+                    let ($($name),*) = arg;
+                    Ok(self(ctx, $($name),*))
+                }
+            }
+
+            impl<A, E, $($ty),*> NewActor for fn(&mut Context<A>, $($ty),*) -> Result<A, E>
+            where
+                A: Actor,
+                E: 'static,
+                $($ty: 'static,)*
+            {
+                type Actor = A;
+                type Arg = ($($ty),*);
+                type Error = E;
+
+                fn make(
+                    &mut self,
+                    ctx: &mut Context<Self::Actor>,
+                    arg: Self::Arg,
+                ) -> Result<Self::Actor, Self::Error> {
+                    let ($($name),*) = arg;
+                    self(ctx, $($name),*)
+                }
+            }
+        )*
+    };
+}
+
+impl<A, Arg> NewActor for fn(&mut Context<A>, Arg) -> A
+where
+    A: Actor,
+    Arg: 'static,
+{
+    type Actor = A;
+    type Arg = Arg;
+    type Error = !;
+
+    fn make(
+        &mut self,
+        ctx: &mut Context<Self::Actor>,
+        arg: Self::Arg,
+    ) -> Result<Self::Actor, Self::Error> {
+        Ok(self(ctx, arg))
+    }
+}
+
+impl<A, Arg, E> NewActor for fn(&mut Context<A>, Arg) -> Result<A, E>
+where
+    A: Actor,
+    Arg: 'static,
+    E: 'static,
+{
+    type Actor = A;
+    type Arg = Arg;
+    type Error = E;
+
+    fn make(
+        &mut self,
+        ctx: &mut Context<Self::Actor>,
+        arg: Self::Arg,
+    ) -> Result<Self::Actor, Self::Error> {
+        self(ctx, arg)
+    }
+}
+
+impl_new_actor_for_fn! {
+    (),
+    // -- Manually implemented for one arg to avoid tuple representation. --
+    (a1: A1, a2: A2),
+    (a1: A1, a2: A2, a3: A3),
+    (a1: A1, a2: A2, a3: A3, a4: A4),
+    (a1: A1, a2: A2, a3: A3, a4: A4, a5: A5),
+    (a1: A1, a2: A2, a3: A3, a4: A4, a5: A5, a6: A6),
+    (a1: A1, a2: A2, a3: A3, a4: A4, a5: A5, a6: A6, a7: A7),
+    (a1: A1, a2: A2, a3: A3, a4: A4, a5: A5, a6: A6, a7: A7, a8: A8),
+    (a1: A1, a2: A2, a3: A3, a4: A4, a5: A5, a6: A6, a7: A7, a8: A8, a9: A9),
+    (a1: A1, a2: A2, a3: A3, a4: A4, a5: A5, a6: A6, a7: A7, a8: A8, a9: A9, a10: A10),
+}
