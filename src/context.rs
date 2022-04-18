@@ -265,6 +265,7 @@ impl<A: Actor> Context<A> {
     // This includes everything but mailbox and actor ID.
     fn reset(&mut self) {
         self.state = ActorState::Starting;
+        // TODO: Clean outstanding messages from the mailbox.
     }
 
     /// Executes the given [`Actor`] object in this context.

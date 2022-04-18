@@ -1,6 +1,11 @@
 //! TODO
 
-#![deny(missing_docs, rustdoc::broken_intra_doc_links, unsafe_op_in_unsafe_fn)]
+#![deny(
+    missing_docs,
+    rust_2018_idioms,
+    rustdoc::broken_intra_doc_links,
+    unsafe_op_in_unsafe_fn
+)]
 #![feature(control_flow_enum, generic_associated_types)]
 
 mod actor;

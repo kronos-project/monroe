@@ -7,6 +7,9 @@ use crate::{supervisor::Supervisor, Context};
 mod new;
 pub use self::new::NewActor;
 
+mod stream;
+pub use self::stream::StreamHandler;
+
 /// An encapsulated unit of computation.
 ///
 /// Actors are finite state machines which communicate merely
@@ -53,16 +56,26 @@ pub use self::new::NewActor;
 /// - *stopped*; in which case [`Actor::stopped`] will be called
 ///   directly with the actor's current state.
 ///
-/// As a result, the implementation of [`Actor::stopped`] should
+/// As a result, the implementation of [`Actor::stopped`] must
 /// be crafted with the idea in mind that an actor may have just
-/// been interrupted right in the middle of a [`Message`] [`Handler`].
-/// It should assume no particular logical invariants on the actor
-/// object as these may have been broken depending on the cause
-/// behind the actor shutdown.
+/// been interrupted right in the middle of a [`Message`]
+/// [`Handler`].
 ///
-/// Note that message handlers on the other hand can assume any
-/// logical invariants are upheld at any given point unless they
+/// No particular logical invariants should therefore be assumed
+/// on the actor object during the execution of these two methods.
+/// Message handlers on the other hand can assume any logical
+/// invariants are upheld at any given point unless they
 /// temporarily break them on their own.
+///
+/// Another way of designing exception-safe actors is to
+/// decouple problematic logic from the actor itself by designing
+/// interfaces that are exception safe on their own, i.e. do
+/// not expose their invariants to the user.
+///
+/// While this class of issue is generally very rare in Rust
+/// and panics also shouldn't act as a generic error handling
+/// mechanism, these contracts must be upheld so that we can
+/// allow sane resource cleanup even on crashes.
 ///
 /// [exception safety]: https://github.com/rust-lang/rfcs/blob/master/text/1236-stabilize-catch-panic.md
 // TODO: Explain how actors are started.
