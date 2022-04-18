@@ -1,9 +1,24 @@
-pub use monroe_inbox::{SendError as Disconnected, TrySendError as TellError};
+use std::time::Duration;
 
 use crate::{
     mailbox::{ForgettingEnvelope, Letter, MailboxSender, WeakMailboxSender},
     Actor, Handler, Message,
 };
+use monroe_inbox::{SendError, SendTimeoutError, TrySendError};
+
+/// The error that is returned if sending a message to
+/// an actor fails because the actor was shutdown.
+pub type Disconnected<T> = SendError<T>;
+
+/// The error that is returned for the [`Address::try_tell`]
+/// operation indicating that the receiving actor
+/// is either shutdown, or its mailbox is full.
+pub type TellError<T> = TrySendError<T>;
+
+/// The error that is returned for the [`Address::tell_timeout`]
+/// operation indicating that the receiving actor is either
+/// shutdown, or the given timeout has expired.
+pub type TellTimeoutError<T> = SendTimeoutError<T>;
 
 /// A strong reference to an [`Actor`].
 ///
@@ -103,7 +118,7 @@ impl<A: Actor> Address<A> {
     ///
     /// This method can be used with no regrets - this strategy
     /// of sending messages can never cause a deadlock.
-    pub fn tell<M>(&self, message: M) -> Result<(), TellError<M>>
+    pub fn try_tell<M>(&self, message: M) -> Result<(), TellError<M>>
     where
         M: Message,
         A: Handler<M>,
@@ -125,18 +140,18 @@ impl<A: Actor> Address<A> {
 
     /// Sends a fire-and-forget [`Message`] to the actor.
     ///
-    /// Unlike [`Address::tell`], this method is asynchronous
+    /// Unlike [`Address::try_tell`], this method is asynchronous
     /// and will wait for a free slot in the actor mailbox
     /// prior to returning.
     ///
     /// This also means that actors with bounded mailboxes
     /// must **beware of deadlocks on cyclic interaction**.
+    /// For an operation that prevents deadlocks, have a look
+    /// at the [`try_tell`](Address::try_tell) method.
     ///
     /// [`Disconnected`] will be returned when the referenced
     /// actor has shut down and does not accept messages.
-    // TODO: Better name.
-    // TODO: Optional timeout argument to mitigate deadlocks.
-    pub async fn tell_async<M>(&self, message: M) -> Result<(), Disconnected<M>>
+    pub async fn tell<M>(&self, message: M) -> Result<(), Disconnected<M>>
     where
         M: Message,
         A: Handler<M>,
@@ -147,9 +162,48 @@ impl<A: Actor> Address<A> {
         self.tx
             .send(Box::new(envelope))
             .await
-            .map_err(|Disconnected(letter)| {
+            .map_err(|SendError(letter)| {
                 let letter: Box<ForgettingEnvelope<A, M>> = unsafe { downcast_letter(letter) };
-                Disconnected(letter.message)
+                SendError(letter.message)
+            })
+    }
+
+    /// Sends a fire-and-forget [`Message`] to the actor.
+    ///
+    /// Unlike [`Address::tell`], this method is asynchronous
+    /// and will either wait for a free slot in the actor mailbox
+    /// prior to returning, or until the given timeout expired.
+    ///
+    /// This method can be used as a way to prevent deadlocks
+    /// when sending messages since it will stop waiting when
+    /// the timeout has expired.
+    ///
+    /// [`Disconnected`] will be returned when the referenced
+    /// actor has shut down and does not accept messages.
+    pub async fn tell_timeout<M>(
+        &self,
+        message: M,
+        timeout: Duration,
+    ) -> Result<(), TellTimeoutError<M>>
+    where
+        M: Message,
+        A: Handler<M>,
+    {
+        let envelope = ForgettingEnvelope::<A, M>::new(message);
+
+        // SAFETY: We always get `ForgettingEnvelope<A, M>` back on error.
+        self.tx
+            .send_timeout(Box::new(envelope), timeout)
+            .await
+            .map_err(|error| match error {
+                TellTimeoutError::Timeout(letter) => {
+                    let letter: Box<ForgettingEnvelope<A, M>> = unsafe { downcast_letter(letter) };
+                    TellTimeoutError::Timeout(letter.message)
+                }
+                TellTimeoutError::Disconnected(letter) => {
+                    let letter: Box<ForgettingEnvelope<A, M>> = unsafe { downcast_letter(letter) };
+                    TellTimeoutError::Disconnected(letter.message)
+                }
             })
     }
 
