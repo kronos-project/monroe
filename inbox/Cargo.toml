@@ -13,6 +13,7 @@ futures-core = "0.3.21"
 parking_lot = "0.12.0"
 pin-project-lite = "0.2.8"
 spin = { version = "0.9.2", features = ["mutex"] }
+tokio = { version = "1.17.0", features = ["time"] }
 
 [dev-dependencies]
 futures = "0.3.21"

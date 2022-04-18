@@ -616,4 +616,26 @@ mod tests {
 
         assert_eq!(rx.recv().await, Ok(1337));
     }
+
+    #[tokio::test]
+    async fn send_timeout() {
+        let (tx, rx) = bounded(2);
+
+        let timeout = Duration::from_millis(100);
+        tx.send_timeout(1, timeout).await.unwrap();
+        tx.send_timeout(2, timeout).await.unwrap();
+        assert_eq!(
+            tx.send_timeout(3, timeout).await,
+            Err(SendTimeoutError::Timeout(3)),
+        );
+
+        assert_eq!(rx.recv().await, Ok(1));
+        assert_eq!(rx.recv().await, Ok(2));
+
+        tokio::spawn(async move {
+            tx.send_timeout(3, timeout).await.unwrap();
+        });
+
+        assert_eq!(rx.recv().await, Ok(3));
+    }
 }

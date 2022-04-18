@@ -1,17 +1,20 @@
 use crate::{
     hook::SenderHook,
     signal::{AsyncSignal, Signal},
-    Shared,
+    Chan, Shared,
 };
-use futures_core::FusedFuture;
+use futures_core::{ready, FusedFuture};
+use parking_lot::MutexGuard;
 use pin_project_lite::pin_project;
 use std::{
     fmt,
     future::Future,
     pin::Pin,
     sync::{atomic::Ordering, Arc, Weak},
-    task::Poll,
+    task::{self, Poll},
+    time::Duration,
 };
+use tokio::time::Sleep;
 
 /// Error produced by the sender when trying to send a value to
 /// an already dropped receiver.
@@ -33,6 +36,35 @@ impl<T> fmt::Display for SendError<T> {
 }
 
 impl<T: fmt::Debug> std::error::Error for SendError<T> {}
+
+/// An error that may be emitted when sending a value into
+/// a channel on a sender with a timeout when the send
+/// operation times out or all receivers are dropped.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum SendTimeoutError<T> {
+    /// A timeout occurred when attempting to send the message.
+    Timeout(T),
+    /// All channel receivers were dropped and so the message
+    /// has nobody to receive it.
+    Disconnected(T),
+}
+
+impl<T> fmt::Display for SendTimeoutError<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            SendTimeoutError::Timeout(_) => f.write_str("timed out sending on a full channel"),
+            SendTimeoutError::Disconnected(_) => f.write_str("sending on a closed channel"),
+        }
+    }
+}
+
+impl<T: fmt::Debug> std::error::Error for SendTimeoutError<T> {}
+
+impl<T> From<SendError<T>> for SendTimeoutError<T> {
+    fn from(SendError(msg): SendError<T>) -> Self {
+        SendTimeoutError::Disconnected(msg)
+    }
+}
 
 /// An error that may be emitted when attempting to send a
 /// value into a channel on a sender when the channel
@@ -71,9 +103,10 @@ pub struct Sender<T> {
 
 impl<T> Sender<T> {
     /// Asynchronously send a value into the channel, returning
-    /// an error if all receivers have been dropped. If the
-    /// channel is bounded and is full, the returned future will
-    /// yield to the async runtime.
+    /// an error if all receivers have been dropped.
+    ///
+    /// If the channel is bounded and is full,
+    /// the returned future will yield to the async runtime.
     ///
     /// In the current implementation, the returned future will
     /// not yield to the async runtime if the channel is
@@ -82,6 +115,26 @@ impl<T> Sender<T> {
         SendFut {
             sender: self,
             hook: Some(SendState::NotYetSent(msg)),
+        }
+    }
+
+    /// Asynchronously send a value into the channel, returning
+    /// an error if all receivers have been dropped, or the
+    /// timeout has expired.
+    ///
+    /// If the channel is bounded and is full,
+    /// the returned future will yield to the async runtime.
+    ///
+    /// In the current implementation, the returned future will
+    /// not yield to the async runtime if the channel is
+    /// unbounded. This may change in later versions.
+    pub fn send_timeout(&self, msg: T, timeout: Duration) -> SendTimeoutFut<'_, T> {
+        SendTimeoutFut {
+            fut: SendFut {
+                sender: self,
+                hook: Some(SendState::NotYetSent(msg)),
+            },
+            timeout: tokio::time::sleep(timeout),
         }
     }
 
@@ -180,10 +233,55 @@ impl<T> fmt::Debug for WeakSender<T> {
 }
 
 pin_project! {
+    /// A future that sends a value into a channel and may time.
+    ///
+    /// Can be created via [`Sender::send_timeout`].
+    #[must_use = "futures/streams/sinks do nothing unless you `.await` or poll them"]
+    pub struct SendTimeoutFut<'a, T> {
+        #[pin]
+        fut: SendFut<'a, T>,
+        #[pin]
+        timeout: Sleep,
+    }
+}
+
+impl<T> Future for SendTimeoutFut<'_, T> {
+    type Output = Result<(), SendTimeoutError<T>>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<Self::Output> {
+        let mut this = self.project();
+
+        match this.timeout.poll(cx) {
+            // timed out
+            Poll::Ready(_) => {
+                let item = match this.fut.hook.take().unwrap() {
+                    SendState::NotYetSent(item) => item,
+                    // if the item was queued, reset the hook and
+                    // take the item out of the hook
+                    SendState::QueuedItem(hook) => {
+                        let mut chan = this.fut.sender.shared.chan.lock();
+                        SendFut::reset_hook(&mut chan, hook.signal().as_ptr());
+                        hook.try_take().unwrap()
+                    }
+                };
+
+                Poll::Ready(Err(SendTimeoutError::Timeout(item)))
+            }
+            Poll::Pending => Poll::Ready(ready!(this.fut.poll(cx)).map_err(Into::into)),
+        }
+    }
+}
+
+impl<T> FusedFuture for SendTimeoutFut<'_, T> {
+    fn is_terminated(&self) -> bool {
+        self.fut.sender.shared.is_disconnected() || self.timeout.is_elapsed()
+    }
+}
+
+pin_project! {
     /// A future that sends a value into a channel.
     ///
-    /// Can be created via [`Sender::send_async`] or
-    /// [`Sender::into_send_async`].
+    /// Can be created via [`Sender::send`].
     #[must_use = "futures/streams/sinks do nothing unless you `.await` or poll them"]
     pub struct SendFut<'a, T> {
         sender: &'a Sender<T>,
@@ -193,28 +291,25 @@ pin_project! {
 
     impl<T> PinnedDrop for SendFut<'_, T> {
         fn drop(mut this: Pin<&mut Self>) {
-            this.reset_hook();
+            let this = this.project();
+
+            if let Some(SendState::QueuedItem(hook)) = this.hook.take() {
+                let mut chan = this.sender.shared.chan.lock();
+                SendFut::reset_hook(&mut chan, hook.signal().as_ptr());
+            }
         }
     }
 }
 
-impl<T> SendFut<'_, T> {
+impl<'a, T> SendFut<'a, T> {
     /// Reset the hook, clearing it and removing it from the
     /// waiting sender's queue.  This is called on drop.
-    fn reset_hook(&mut self) {
-        let hook = match self.hook.take() {
-            Some(SendState::QueuedItem(hook)) => hook,
-            _ => return,
-        };
-
-        let mut chan = self.sender.shared.chan.lock();
-
+    fn reset_hook(chan: &mut MutexGuard<'_, Chan<T>>, our_signal: *const ()) {
         // this can't be `None`, because `QueuedItem` state can
         // only exist if we have to wait for free capacity
         let (_, sending) = chan.sending.as_mut().unwrap();
 
         // remove all waiting signals that are ours
-        let our_signal = hook.signal().as_ptr();
         sending.retain(|s| s.signal().as_ptr() != our_signal);
     }
 }
@@ -222,11 +317,13 @@ impl<T> SendFut<'_, T> {
 impl<T> Future for SendFut<'_, T> {
     type Output = Result<(), SendError<T>>;
 
-    fn poll(mut self: Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> Poll<Self::Output> {
+    fn poll(self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<Self::Output> {
+        let this = self.project();
+
         // if the state of this future is `QueuedItem`, it means,
         // that this is the second poll, and we were probably
         // woken up by the executor
-        if let Some(SendState::QueuedItem(hook)) = self.hook.as_ref() {
+        if let Some(SendState::QueuedItem(hook)) = this.hook.as_ref() {
             // if no item in our hook, item was send successfully
             if hook.is_empty() {
                 return Poll::Ready(Ok(()));
@@ -234,8 +331,8 @@ impl<T> Future for SendFut<'_, T> {
 
             // on disconnected channel, take item out of hook
             // and return an error
-            if self.sender.shared.is_disconnected() {
-                return match self.hook.take().unwrap() {
+            if this.sender.shared.is_disconnected() {
+                return match this.hook.take().unwrap() {
                     // this should be unreachable, but we just play safe here
                     SendState::NotYetSent(item) => Poll::Ready(Err(SendError(item))),
                     SendState::QueuedItem(hook) => match hook.try_take() {
@@ -253,18 +350,8 @@ impl<T> Future for SendFut<'_, T> {
         }
 
         // first time polling, try to send the message using `shared.send`
-        if matches!(self.hook, Some(SendState::NotYetSent(_))) {
-            let mut this = self.project();
-
-            let shared = &this.sender.shared;
-            let this_hook = &mut this.hook;
-
-            let item = match this_hook.take().unwrap() {
-                SendState::NotYetSent(item) => item,
-                SendState::QueuedItem(_) => unreachable!(),
-            };
-
-            return shared.send(item, |item, mut chan| {
+        if let Some(SendState::NotYetSent(item)) = this.hook.take() {
+            return this.sender.shared.send(item, |item, mut chan| {
                 let hook = SenderHook::new(Some(item), AsyncSignal::new(cx));
                 chan.sending.as_mut().unwrap().1.push_back(hook.clone());
                 drop(chan);
@@ -273,13 +360,13 @@ impl<T> Future for SendFut<'_, T> {
                 // when we get woken up again, we jump into the
                 // first `if` clause and try to pop the item from
                 // the queue
-                **this_hook = Some(SendState::QueuedItem(hook));
+                *this.hook = Some(SendState::QueuedItem(hook));
                 Poll::Pending
             });
         }
 
         // unreachable
-        Poll::Pending
+        unreachable!()
     }
 }
 
