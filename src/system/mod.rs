@@ -2,7 +2,11 @@ use std::{num::NonZeroUsize, sync::Arc};
 
 use uuid::Uuid;
 
-use crate::{mailbox, supervisor::NoRestart, Address, Context, ROOT_ACTOR_ID};
+use crate::{
+    mailbox,
+    supervisor::{NoRestart, Supervisor},
+    Actor, Address, Context, NewActor, ROOT_ACTOR_ID,
+};
 
 mod handle;
 pub use self::handle::*;
@@ -112,6 +116,51 @@ impl ActorSystem {
     /// in use.
     pub fn config(&self) -> &ActorSystemConfig {
         &self.inner.config
+    }
+
+    ///
+    pub async fn spawn<S: Supervisor<NA>, NA: NewActor>(
+        &self,
+        supervisor: S,
+        new_actor: NA,
+        arg: NA::Arg,
+        capacity: Option<NonZeroUsize>,
+    ) -> Result<Address<NA::Actor>, NA::Error> {
+        // Construct the actor's execution context.
+        let (sender, receiver) = match capacity.or_else(|| self.config().mailbox_size) {
+            Some(capacity) => mailbox::bounded(capacity.get()),
+            None => mailbox::unbounded(),
+        };
+        let context = Context::new(self.clone(), receiver);
+        let address = Address::new(context.id(), sender);
+
+        // Spawn the actor onto the runtime and store its handle.
+        let _ = self
+            .inner
+            .root
+            .ask(AddActor(ActorHandle {
+                address: address.clone(),
+                handle: context.run(supervisor, new_actor, arg)?,
+            }))
+            .await;
+
+        Ok(address)
+    }
+
+    ///
+    pub async fn find_actor<A: Actor>(&self, id: u64) -> Option<Address<A>> {
+        self.inner.root.ask(FindActor::new(id)).await.unwrap()
+    }
+
+    ///
+    pub async fn wait_for_shutdown(&self) {
+        // Request all the task handles currently stored in the root actor.
+        let mut handles = self.inner.root.ask(DrainActors).await.unwrap();
+
+        // Wait for all these tasks to terminate.
+        for handle in handles.drain(..) {
+            let _ = handle.await;
+        }
     }
 }
 

@@ -49,4 +49,3 @@ pub type WeakMailboxSender<A> = monroe_inbox::WeakSender<Letter<A>>;
 pub type MailboxReceiver<A> = monroe_inbox::Receiver<Letter<A>>;
 
 pub type OneshotSender<T> = tokio::sync::oneshot::Sender<T>;
-pub type OneshotReceiver<T> = tokio::sync::oneshot::Receiver<T>;

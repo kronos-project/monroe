@@ -42,7 +42,7 @@ impl<T: fmt::Debug> std::error::Error for SendError<T> {}
 /// An error that may be emitted when sending a value into
 /// a channel on a sender with a timeout when the send
 /// operation times out or all receivers are dropped.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SendTimeoutError<T> {
     /// A timeout occurred when attempting to send the message.
     Timeout(T),
