@@ -1,4 +1,5 @@
 use std::{
+    fmt,
     future::Future,
     ops::Deref,
     pin::Pin,
@@ -45,6 +46,14 @@ impl<A: Actor> ActorHandle<A> {
     /// for the actor lifecycle to be incremented.
     pub fn address(&self) -> Address<A> {
         self.address.clone()
+    }
+}
+
+impl<A: Actor> fmt::Debug for ActorHandle<A> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ActorHandle")
+            .field("address", &self.address)
+            .finish()
     }
 }
 

@@ -6,7 +6,12 @@
     rustdoc::broken_intra_doc_links,
     unsafe_op_in_unsafe_fn
 )]
-#![feature(control_flow_enum, generic_associated_types, never_type)]
+#![feature(
+    control_flow_enum,
+    generic_associated_types,
+    never_type,
+    type_alias_impl_trait
+)]
 #![allow(dead_code)] // FIXME: remove once CI passes with this disabled
 
 mod actor;

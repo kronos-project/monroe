@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{fmt, time::Duration};
 
 use crate::{
     mailbox::{ForgettingEnvelope, Letter, MailboxSender, WeakMailboxSender},
@@ -45,7 +45,6 @@ pub type TellTimeoutError<T> = SendTimeoutError<T>;
 /// allows an actor to retrieve its own reference.
 ///
 /// [`Context::address`]: crate::Context::address
-#[derive(Debug)]
 pub struct Address<A: Actor> {
     id: u64,
     tx: MailboxSender<A>,
@@ -67,7 +66,6 @@ pub struct Address<A: Actor> {
 /// must first be made into a strong [`Address`] through the
 /// [`WeakAddress::upgrade`] method which only succeeds when the
 /// actor is still alive.
-#[derive(Debug)]
 pub struct WeakAddress<A: Actor> {
     id: u64,
     tx: WeakMailboxSender<A>,
@@ -248,6 +246,18 @@ impl<A: Actor> Clone for WeakAddress<A> {
             id: self.id,
             tx: self.tx.clone(),
         }
+    }
+}
+
+impl<A: Actor> fmt::Debug for Address<A> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Address").field("id", &self.id).finish()
+    }
+}
+
+impl<A: Actor> fmt::Debug for WeakAddress<A> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("WeakAddress").field("id", &self.id).finish()
     }
 }
 

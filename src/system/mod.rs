@@ -8,7 +8,7 @@ mod handle;
 pub use self::handle::*;
 
 mod root;
-use self::root::RootActor;
+use self::root::*;
 
 /// The configuration for an [`ActorSystem`].
 #[derive(Clone, Debug, Default, PartialEq)]

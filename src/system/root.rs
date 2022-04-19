@@ -1,12 +1,14 @@
 use futures_util::future::{ready, Ready};
 
-use crate::{Actor, Context};
+use crate::{Actor, Context, ROOT_ACTOR_ID};
 
 #[derive(Debug)]
 pub struct RootActor {}
 
 impl RootActor {
-    pub fn new(_ctx: &mut Context<Self>) -> Self {
+    pub fn new(ctx: &mut Context<Self>) -> Self {
+        debug_assert_eq!(ctx.id(), ROOT_ACTOR_ID);
+
         Self {}
     }
 }

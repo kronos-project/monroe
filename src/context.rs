@@ -95,18 +95,17 @@ pub struct Context<A: Actor> {
 
 impl<A: Actor> Context<A> {
     pub(crate) fn new(system: ActorSystem, mailbox: MailboxReceiver<A>) -> Self {
-        Self {
-            id: next_actor_id(),
-            system,
-            mailbox,
-            state: ActorState::Starting,
-        }
+        Self::new_with_id(next_actor_id(), system, mailbox)
     }
 
     // A specialized method for constructing the root actor with its correct ID.
     pub(crate) fn new_root(system: ActorSystem, mailbox: MailboxReceiver<A>) -> Self {
+        Self::new_with_id(ROOT_ACTOR_ID, system, mailbox)
+    }
+
+    fn new_with_id(id: u64, system: ActorSystem, mailbox: MailboxReceiver<A>) -> Self {
         Self {
-            id: ROOT_ACTOR_ID,
+            id,
             system,
             mailbox,
             state: ActorState::Starting,
@@ -130,6 +129,17 @@ impl<A: Actor> Context<A> {
     /// ID is that no two actors will ever share the same value.
     pub fn id(&self) -> u64 {
         self.id
+    }
+
+    /// Gets an immutable reference to the [`ActorSystem`] bound
+    /// to the context.
+    ///
+    /// Note that the returned system is the one that anchors the
+    /// entire hierarchy that the actor governed by this context
+    /// is part of. This does not imply that the actor is directly
+    /// tracked by the system.
+    pub fn system(&self) -> &ActorSystem {
+        &self.system
     }
 
     /// Initiates the shutdown of the actor that is governed by
@@ -159,6 +169,10 @@ impl<A: Actor> Context<A> {
     ///
     /// Actors are usually responsible for managing the handles
     /// of their children in accordance with its own behavior.
+    ///
+    /// The `capacity` argument may be used as an optional
+    /// override for an actor's mailbox capacity in contrast to
+    /// global system configuration.
     pub fn spawn_actor<S: Supervisor<NA>, NA: NewActor>(
         &self,
         supervisor: S,
