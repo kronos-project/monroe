@@ -1,24 +1,74 @@
 use std::{fmt, time::Duration};
 
+use monroe_inbox::{SendError, SendTimeoutError, TrySendError};
+use tokio::sync::oneshot;
+
 use crate::{
-    mailbox::{ForgettingEnvelope, Letter, MailboxSender, WeakMailboxSender},
+    mailbox::{ForgettingEnvelope, Letter, MailboxSender, ReturningEnvelope, WeakMailboxSender},
     Actor, Handler, Message,
 };
-use monroe_inbox::{SendError, SendTimeoutError, TrySendError};
 
-/// The error that is returned if sending a message to
-/// an actor fails because the actor was shutdown.
+/// The message could not be delivered to the actor because
+/// it was already shut down.
 pub type Disconnected<T> = SendError<T>;
 
-/// The error that is returned for the [`Address::try_tell`]
-/// operation indicating that the receiving actor
-/// is either shutdown, or its mailbox is full.
+/// The error that is produced by [`Address::try_tell`].
 pub type TellError<T> = TrySendError<T>;
 
-/// The error that is returned for the [`Address::tell_timeout`]
-/// operation indicating that the receiving actor is either
-/// shutdown, or the given timeout has expired.
+/// The error that is produced by [`Address::tell_timeout`].
 pub type TellTimeoutError<T> = SendTimeoutError<T>;
+
+/// The error that is produced by [`Address::try_ask`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum TryAskError<T> {
+    /// The envelope has been dropped before it could produce
+    /// an answer.
+    ///
+    /// This is usually the case when an actor panics while
+    /// processing a message or when the actor task is aborted
+    /// by force.
+    Dropped,
+    /// The channel the message is sent on has a finite capacity
+    /// and was full when the send was attempted.
+    Full(T),
+    /// The message could not be delivered to the actor because
+    /// it was already shut down.
+    Disconnected(T),
+}
+
+/// The error that is produced by [`Address::ask`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum AskError<T> {
+    /// The envelope has been dropped before it could produce
+    /// an answer.
+    ///
+    /// This is usually the case when an actor panics while
+    /// processing a message or when the actor task is aborted
+    /// by force.
+    Dropped,
+    /// The message could not be delivered to the actor because
+    /// it was already shut down.
+    Disconnected(T),
+}
+
+/// The error that is produced by [`Address::ask_timeout`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum AskTimeoutError<T> {
+    /// The envelope has been dropped before it could produce
+    /// an answer.
+    ///
+    /// This is usually the case when an actor panics while
+    /// processing a message or when the actor task is aborted
+    /// by force.
+    Dropped,
+    /// A timeout occurred when attempting to send the message.
+    Timeout(T),
+    /// All channel receivers were dropped and so the message
+    /// has nobody to receive it.
+    Disconnected(T),
+}
+
+// TODO: Error trait impls for all these types.
 
 /// A strong reference to an [`Actor`].
 ///
@@ -205,7 +255,81 @@ impl<A: Actor> Address<A> {
             })
     }
 
-    // TODO: ask/ask_async
+    ///
+    pub async fn try_ask<M>(&self, message: M) -> Result<M::Result, TryAskError<M>>
+    where
+        M: Message,
+        A: Handler<M>,
+    {
+        let (tx, rx) = oneshot::channel();
+        let envelope = ReturningEnvelope::<A, M>::new(message, tx);
+
+        // SAFETY: We always get `ReturningEnvelope<A, M>` back on error.
+        match self.tx.try_send(Box::new(envelope)) {
+            Ok(()) => match rx.await {
+                Ok(res) => Ok(res),
+                Err(_) => Err(TryAskError::Dropped),
+            },
+            Err(TrySendError::Full(letter)) => {
+                let letter: Box<ReturningEnvelope<A, M>> = unsafe { downcast_letter(letter) };
+                Err(TryAskError::Full(letter.message))
+            }
+            Err(TrySendError::Disconnected(letter)) => {
+                let letter: Box<ReturningEnvelope<A, M>> = unsafe { downcast_letter(letter) };
+                Err(TryAskError::Disconnected(letter.message))
+            }
+        }
+    }
+
+    ///
+    pub async fn ask<M>(&self, message: M) -> Result<M::Result, AskError<M>>
+    where
+        A: Actor + Handler<M>,
+        M: Message,
+    {
+        let (tx, rx) = oneshot::channel();
+        let envelope = ReturningEnvelope::<A, M>::new(message, tx);
+
+        match self.tx.send(Box::new(envelope)).await {
+            Ok(()) => match rx.await {
+                Ok(res) => Ok(res),
+                Err(_) => Err(AskError::Dropped),
+            },
+            Err(SendError(letter)) => {
+                let letter: Box<ReturningEnvelope<A, M>> = unsafe { downcast_letter(letter) };
+                Err(AskError::Disconnected(letter.message))
+            }
+        }
+    }
+
+    ///
+    pub async fn ask_timeout<M>(
+        &self,
+        message: M,
+        timeout: Duration,
+    ) -> Result<M::Result, AskTimeoutError<M>>
+    where
+        A: Actor + Handler<M>,
+        M: Message,
+    {
+        let (tx, rx) = oneshot::channel();
+        let envelope = ReturningEnvelope::<A, M>::new(message, tx);
+
+        match self.tx.send_timeout(Box::new(envelope), timeout).await {
+            Ok(()) => match rx.await {
+                Ok(res) => Ok(res),
+                Err(_) => Err(AskTimeoutError::Dropped),
+            },
+            Err(SendTimeoutError::Timeout(letter)) => {
+                let letter: Box<ReturningEnvelope<A, M>> = unsafe { downcast_letter(letter) };
+                Err(AskTimeoutError::Timeout(letter.message))
+            }
+            Err(SendTimeoutError::Disconnected(letter)) => {
+                let letter: Box<ReturningEnvelope<A, M>> = unsafe { downcast_letter(letter) };
+                Err(AskTimeoutError::Disconnected(letter.message))
+            }
+        }
+    }
 }
 
 impl<A: Actor> WeakAddress<A> {
