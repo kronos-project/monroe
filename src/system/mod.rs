@@ -165,10 +165,10 @@ impl ActorSystem {
     ///
     pub async fn wait_for_shutdown(self) {
         // Request all the task handles currently stored in the root actor.
-        let mut handles = self.inner.root.ask(DrainActors).await.unwrap();
+        let handles = self.inner.root.ask(DrainActors).await.unwrap();
 
         // Wait for all these tasks to terminate.
-        for handle in handles.drain(..) {
+        for handle in handles.into_iter() {
             let _ = handle.await;
         }
     }
