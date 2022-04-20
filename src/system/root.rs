@@ -11,7 +11,7 @@ use rustc_hash::FxHashMap;
 use tokio::task::JoinHandle;
 
 use super::{broker::Broker, ActorHandle};
-use crate::{Actor, Address, Context, Handler, Message, ROOT_ACTOR_ID, WeakAddress};
+use crate::{Actor, Address, Context, Handler, Message, WeakAddress, ROOT_ACTOR_ID};
 
 #[derive(Debug)]
 pub struct RootActor {

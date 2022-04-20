@@ -1,6 +1,6 @@
 use rustc_hash::FxHashMap;
 
-use crate::{Actor, Handler, Message, TellError, WeakAddress};
+use crate::{Actor, Handler, Message, WeakAddress};
 
 pub struct Broker<M: Clone + Message<Result = ()>> {
     subscribers: FxHashMap<u64, Box<dyn Recipient<M>>>,
@@ -20,7 +20,7 @@ impl<M: Clone + Message<Result = ()>> Broker<M> {
 
     pub fn broadcast(&self, message: M) {
         for sub in self.subscribers.values() {
-            let _ = sub.send(message.clone());
+            sub.send(message.clone());
         }
     }
 }
@@ -34,7 +34,7 @@ impl<M: Clone + Message<Result = ()>> Default for Broker<M> {
 }
 
 trait Recipient<M: Clone + Message<Result = ()>>: Send {
-    fn send(&self, message: M) -> Result<(), TellError<M>>;
+    fn send(&self, message: M);
 }
 
 impl<A, M> Recipient<M> for WeakAddress<A>
@@ -42,10 +42,9 @@ where
     A: Actor + Handler<M>,
     M: Clone + Message<Result = ()>,
 {
-    fn send(&self, message: M) -> Result<(), TellError<M>> {
-        match self.upgrade() {
-            Some(addr) => addr.try_tell(message),
-            None => Err(TellError::Disconnected(message)),
+    fn send(&self, message: M) {
+        if let Some(addr) = self.upgrade() {
+            let _ = addr.try_tell(message);
         }
     }
 }
