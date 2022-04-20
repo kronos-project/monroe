@@ -102,6 +102,16 @@ impl ActorSystem {
         system
     }
 
+    // Crate-internal clone method so people cannot move out of the
+    // `ActorSystem` references they are given by the context. This
+    // ensures that methods like `ActorSystem::wait_for_shutdown`
+    // are always used as intended.
+    pub(crate) fn clone(&self) -> Self {
+        Self {
+            inner: Arc::clone(&self.inner),
+        }
+    }
+
     /// Gets an immutable reference to the UUID that is
     /// assigned to this system.
     ///
@@ -153,21 +163,13 @@ impl ActorSystem {
     }
 
     ///
-    pub async fn wait_for_shutdown(&self) {
+    pub async fn wait_for_shutdown(self) {
         // Request all the task handles currently stored in the root actor.
         let mut handles = self.inner.root.ask(DrainActors).await.unwrap();
 
         // Wait for all these tasks to terminate.
         for handle in handles.drain(..) {
             let _ = handle.await;
-        }
-    }
-}
-
-impl Clone for ActorSystem {
-    fn clone(&self) -> Self {
-        Self {
-            inner: Arc::clone(&self.inner),
         }
     }
 }
