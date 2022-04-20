@@ -15,7 +15,7 @@ use crate::{
     mailbox::{self, MailboxReceiver},
     supervisor::{ActorFate, Supervisor},
     system::ActorSystem,
-    Actor, ActorHandle, Address, NewActor,
+    Actor, ActorHandle, Address, Handler, Message, NewActor,
 };
 
 /// The current execution state of an actor.
@@ -194,6 +194,26 @@ impl<A: Actor> Context<A> {
 
     // TODO: Support for scheduling messages to the actor.
     // TODO: Streams?
+
+    ///
+    pub async fn subscribe<M>(&self)
+    where
+        A: Handler<M>,
+        M: Clone + Message<Result = ()>,
+    {
+        self.system()
+            .broker_subscribe::<A, M>(self.address().downgrade())
+            .await;
+    }
+
+    ///
+    pub async fn unsubscribe<M>(&self)
+    where
+        A: Handler<M>,
+        M: Clone + Message<Result = ()>,
+    {
+        self.system().broker_unsubscribe::<M>(self.id).await;
+    }
 }
 
 // Private implementation of the actor lifecycle and supervision

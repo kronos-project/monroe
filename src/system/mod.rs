@@ -5,8 +5,10 @@ use uuid::Uuid;
 use crate::{
     mailbox,
     supervisor::{NoRestart, Supervisor},
-    Actor, Address, Context, NewActor, ROOT_ACTOR_ID,
+    Actor, Address, Context, Handler, Message, NewActor, WeakAddress, ROOT_ACTOR_ID,
 };
+
+mod broker;
 
 mod handle;
 pub use self::handle::*;
@@ -171,5 +173,28 @@ impl ActorSystem {
         for handle in handles.into_iter() {
             let _ = handle.await;
         }
+    }
+
+    ///
+    pub async fn broker_broadcast<M>(&self, message: M)
+    where
+        M: Clone + Message<Result = ()>,
+    {
+        let _ = self.inner.root.ask(Broadcast(message)).await;
+    }
+
+    pub(crate) async fn broker_subscribe<A, M>(&self, address: WeakAddress<A>)
+    where
+        A: Actor + Handler<M>,
+        M: Clone + Message<Result = ()>,
+    {
+        let _ = self.inner.root.ask(Subscribe::<A, M>::new(address)).await;
+    }
+
+    pub(crate) async fn broker_unsubscribe<M>(&self, id: u64)
+    where
+        M: Clone + Message<Result = ()>,
+    {
+        let _ = self.inner.root.ask(Unsubscribe::<M>::new(id)).await;
     }
 }
