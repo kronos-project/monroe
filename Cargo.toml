@@ -20,8 +20,17 @@ uuid = { version = "0.8", features = ["v4"] }
 
 [dev-dependencies]
 futures = "0.3.21"
-tokio = { version = "1", features = ["rt", "macros", "time"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
 waker-fn = "1.1.0"
+# Benchmarks
+criterion = { version = "0.3.5", features = ["async_tokio"] }
+xactor = "0.7.11"
+actix = "0.13.0"
+heph = "0.4.0"
 
 [workspace]
 members = ["inbox"]
+
+[[bench]]
+name = "ring"
+harness = false

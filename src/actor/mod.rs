@@ -95,7 +95,7 @@ pub trait Actor: Sized + Send + 'static {
     ///
     /// During the execution of this method, no messages will
     /// be processed yet. Can be used for initialization work.
-    fn starting(&mut self, ctx: &mut Context<Self>) -> Self::StartingFuture<'_>;
+    fn starting<'a>(&'a mut self, ctx: &'a mut Context<Self>) -> Self::StartingFuture<'a>;
 
     /// Called when the actor has been permanently stopped.
     ///
@@ -179,5 +179,5 @@ pub trait Handler<M: Message>: Actor {
     /// The handler must produce a [`Message::Result`] value which
     /// will eventually be passed back to the issuer of the message.
     // TODO: Write about the context's role.
-    fn handle(&mut self, message: M, ctx: &mut Context<Self>) -> Self::HandleFuture<'_>;
+    fn handle<'a>(&'a mut self, message: M, ctx: &'a mut Context<Self>) -> Self::HandleFuture<'a>;
 }
