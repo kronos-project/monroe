@@ -176,6 +176,17 @@ impl ActorSystem {
     }
 
     ///
+    pub async fn stop(&self) {
+        // Request all the task handles currently stored in the root actor.
+        let handles = self.inner.root.ask(DrainActors).await.unwrap();
+
+        // Forcefully abort all the actor tasks.
+        for handle in handles.into_iter() {
+            handle.abort();
+        }
+    }
+
+    ///
     pub async fn broker_broadcast<M>(&self, message: M)
     where
         M: Clone + Message<Result = ()>,

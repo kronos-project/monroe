@@ -36,6 +36,7 @@ impl<A: Actor> ActorHandle<A> {
     /// Awaiting the aborted handle may or may not complete
     /// successfully if the task has already joined, but will
     /// produce [`JoinError`] in most cases.
+    #[inline]
     pub fn abort(&self) {
         self.handle.abort()
     }
@@ -44,6 +45,7 @@ impl<A: Actor> ActorHandle<A> {
     ///
     /// The returned object will cause the reference count
     /// for the actor lifecycle to be incremented.
+    #[inline]
     pub fn address(&self) -> Address<A> {
         self.address.clone()
     }
@@ -60,8 +62,23 @@ impl<A: Actor> fmt::Debug for ActorHandle<A> {
 impl<A: Actor> Deref for ActorHandle<A> {
     type Target = Address<A>;
 
+    #[inline]
     fn deref(&self) -> &Self::Target {
         &self.address
+    }
+}
+
+impl<A: Actor> From<ActorHandle<A>> for Address<A> {
+    #[inline]
+    fn from(handle: ActorHandle<A>) -> Self {
+        handle.address
+    }
+}
+
+impl<A: Actor> From<ActorHandle<A>> for JoinHandle<()> {
+    #[inline]
+    fn from(handle: ActorHandle<A>) -> Self {
+        handle.handle
     }
 }
 
@@ -69,6 +86,7 @@ impl<A: Actor> Deref for ActorHandle<A> {
 impl<A: Actor> Future for ActorHandle<A> {
     type Output = Result<(), JoinError>;
 
+    #[inline]
     fn poll(self: Pin<&mut Self>, cx: &mut TaskContext<'_>) -> Poll<Self::Output> {
         let this = self.get_mut();
         Pin::new(&mut this.handle).poll(cx)

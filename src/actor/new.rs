@@ -49,6 +49,7 @@ macro_rules! impl_new_actor_for_fn {
                 type Arg = ($($ty),*);
                 type Error = !;
 
+                #[inline]
                 fn make(
                     &mut self,
                     ctx: &mut Context<Self::Actor>,
@@ -69,6 +70,7 @@ macro_rules! impl_new_actor_for_fn {
                 type Arg = ($($ty),*);
                 type Error = E;
 
+                #[inline]
                 fn make(
                     &mut self,
                     ctx: &mut Context<Self::Actor>,
@@ -91,6 +93,7 @@ where
     type Arg = Arg;
     type Error = !;
 
+    #[inline]
     fn make(
         &mut self,
         ctx: &mut Context<Self::Actor>,
@@ -110,6 +113,7 @@ where
     type Arg = Arg;
     type Error = E;
 
+    #[inline]
     fn make(
         &mut self,
         ctx: &mut Context<Self::Actor>,

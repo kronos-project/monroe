@@ -146,7 +146,7 @@ impl<A: Actor> Handler<FindActor<A>> for RootActor {
     }
 }
 
-// --- Broker messages. ---
+// --- Broker messages ---
 
 pub struct Subscribe<A, M>
 where

@@ -122,6 +122,7 @@ pub struct WeakAddress<A: Actor> {
 }
 
 impl<A: Actor> Address<A> {
+    #[inline]
     pub(crate) fn new(id: u64, tx: MailboxSender<A>) -> Self {
         Self { id, tx }
     }
@@ -131,6 +132,7 @@ impl<A: Actor> Address<A> {
     ///
     /// The only assumption that is safe to make about an actor's
     /// ID is that no two actors will ever share the same value.
+    #[inline]
     pub fn id(&self) -> u64 {
         self.id
     }
@@ -139,6 +141,7 @@ impl<A: Actor> Address<A> {
     ///
     /// See the documentation for [`WeakAddress`] to learn its
     /// semantics and when creating one may be desired.
+    #[inline]
     pub fn downgrade(&self) -> WeakAddress<A> {
         WeakAddress {
             id: self.id,
@@ -152,6 +155,7 @@ impl<A: Actor> Address<A> {
     /// Practically speaking, this method returns `true` when the
     /// referenced actor has died and is unable to receive any more
     /// messages.
+    #[inline]
     pub fn is_disconnected(&self) -> bool {
         self.tx.is_disconnected()
     }
@@ -338,6 +342,7 @@ impl<A: Actor> WeakAddress<A> {
     ///
     /// The only assumption that is safe to make about an actor's
     /// ID is that no two actors will ever share the same value.
+    #[inline]
     pub fn id(&self) -> u64 {
         self.id
     }
@@ -350,12 +355,14 @@ impl<A: Actor> WeakAddress<A> {
     ///
     /// This method will return [`None`] when actor `A` has already
     /// been dropped.
+    #[inline]
     pub fn upgrade(&self) -> Option<Address<A>> {
         self.tx.upgrade().map(|tx| Address { id: self.id, tx })
     }
 }
 
 impl<A: Actor> Clone for Address<A> {
+    #[inline]
     fn clone(&self) -> Self {
         Self {
             id: self.id,
@@ -365,6 +372,7 @@ impl<A: Actor> Clone for Address<A> {
 }
 
 impl<A: Actor> Clone for WeakAddress<A> {
+    #[inline]
     fn clone(&self) -> Self {
         Self {
             id: self.id,
@@ -386,6 +394,7 @@ impl<A: Actor> fmt::Debug for WeakAddress<A> {
 }
 
 impl<A: Actor> PartialEq for Address<A> {
+    #[inline]
     fn eq(&self, other: &Self) -> bool {
         // Addresses are automatically equal when the
         // unique IDs of the referenced actors match.
@@ -394,6 +403,7 @@ impl<A: Actor> PartialEq for Address<A> {
 }
 
 impl<A: Actor> PartialEq for WeakAddress<A> {
+    #[inline]
     fn eq(&self, other: &Self) -> bool {
         // Addresses are automatically equal when the
         // unique IDs of the referenced actors match.

@@ -94,10 +94,12 @@ pub struct NoRestart;
 
 // TODO: Error logging?
 impl<NA: NewActor> Supervisor<NA> for NoRestart {
+    #[inline]
     fn on_graceful_stop(&mut self) -> ActorFate<NA::Arg> {
         ActorFate::Stop
     }
 
+    #[inline]
     fn on_restart_failure(
         &mut self,
         _error: <NA as NewActor>::Error,
@@ -105,5 +107,6 @@ impl<NA: NewActor> Supervisor<NA> for NoRestart {
         ActorFate::Stop
     }
 
+    #[inline]
     fn on_second_restart_failure(&mut self, _error: <NA as NewActor>::Error) {}
 }

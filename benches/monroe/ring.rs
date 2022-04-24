@@ -14,9 +14,13 @@ pub async fn run(spec: RingSpec) {
         )
         .await
         .unwrap();
-    let first2 = first.clone();
 
-    first.tell(CloseRing { first: first2 }).await.unwrap();
+    first
+        .tell(CloseRing {
+            first: first.clone(),
+        })
+        .await
+        .unwrap();
 
     first.tell(Payload(0)).await.unwrap();
 
@@ -81,7 +85,7 @@ impl Actor for Ring {
                     None,
                 )
                 .unwrap()
-                .address(),
+                .into(),
             );
         }
     }
@@ -105,12 +109,7 @@ impl Handler<Payload> for Ring {
                 return;
             }
 
-            self.next
-                .as_ref()
-                .unwrap()
-                .tell(Payload(msg + 1))
-                .await
-                .unwrap();
+            let _ = self.next.as_ref().unwrap().tell(Payload(msg + 1)).await;
         }
     }
 }

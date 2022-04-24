@@ -50,6 +50,7 @@ impl ActorState {
     ///
     /// This is an umbrella term for [`ActorState::Starting`]
     /// and [`ActorState::Operating`].
+    #[inline]
     pub fn alive(&self) -> bool {
         use ActorState::*;
         matches!(self, Starting | Operating)
@@ -60,6 +61,7 @@ impl ActorState {
     /// This state is the result of an invocation of
     /// [`Context::stop`] and the actor will not accept any more
     /// messages unless it is restarted.
+    #[inline]
     pub fn stopping(&self) -> bool {
         matches!(self, ActorState::Stopping)
     }
@@ -94,15 +96,18 @@ pub struct Context<A: Actor> {
 }
 
 impl<A: Actor> Context<A> {
+    #[inline]
     pub(crate) fn new(system: ActorSystem, mailbox: MailboxReceiver<A>) -> Self {
         Self::new_with_id(next_actor_id(), system, mailbox)
     }
 
     // A specialized method for constructing the root actor with its correct ID.
+    #[inline]
     pub(crate) fn new_root(system: ActorSystem, mailbox: MailboxReceiver<A>) -> Self {
         Self::new_with_id(ROOT_ACTOR_ID, system, mailbox)
     }
 
+    #[inline]
     fn new_with_id(id: u64, system: ActorSystem, mailbox: MailboxReceiver<A>) -> Self {
         Self {
             id,
@@ -118,6 +123,7 @@ impl<A: Actor> Context<A> {
     /// Since the state of an actor constantly changes, it is
     /// not recommended to cache this value. Instead, it should
     /// be queried through this method again when needed.
+    #[inline]
     pub fn state(&self) -> ActorState {
         self.state
     }
@@ -127,6 +133,7 @@ impl<A: Actor> Context<A> {
     ///
     /// The only assumption that is safe to make about an actor's
     /// ID is that no two actors will ever share the same value.
+    #[inline]
     pub fn id(&self) -> u64 {
         self.id
     }
@@ -138,6 +145,7 @@ impl<A: Actor> Context<A> {
     /// entire hierarchy that the actor governed by this context
     /// is part of. This does not imply that the actor is directly
     /// tracked by the system.
+    #[inline]
     pub fn system(&self) -> &ActorSystem {
         &self.system
     }
@@ -147,6 +155,7 @@ impl<A: Actor> Context<A> {
     ///
     /// This method will return immediately and no more messages
     /// will be processed after calling it.
+    #[inline]
     pub fn stop(&mut self) {
         self.state = ActorState::Stopping;
     }
@@ -156,6 +165,7 @@ impl<A: Actor> Context<A> {
     ///
     /// This allows an actor to retrieve shareable references to
     /// itself during message processing.
+    #[inline]
     pub fn address(&self) -> Address<A> {
         Address::new(self.id, self.mailbox.create_sender())
     }
@@ -196,6 +206,7 @@ impl<A: Actor> Context<A> {
     // TODO: Streams?
 
     ///
+    #[inline]
     pub async fn subscribe<M>(&self)
     where
         A: Handler<M>,
@@ -207,6 +218,7 @@ impl<A: Actor> Context<A> {
     }
 
     ///
+    #[inline]
     pub async fn unsubscribe<M>(&self)
     where
         A: Handler<M>,
@@ -227,6 +239,7 @@ struct Runner<S, NA: NewActor> {
 }
 
 impl<S: Supervisor<NA>, NA: NewActor> Runner<S, NA> {
+    #[inline]
     fn new(
         supervisor: S,
         mut new_actor: NA,
@@ -293,6 +306,7 @@ impl<S: Supervisor<NA>, NA: NewActor> Runner<S, NA> {
         }
     }
 
+    #[inline]
     async fn main_loop(&mut self) -> ControlFlow<()> {
         'main: loop {
             // When actors deal with errors/shutdown, we use `ControlFlow` to indicate
@@ -342,6 +356,7 @@ impl<A: Actor> Context<A> {
     // Resets the context back into a state reusable for restarted actors.
     // This should take care of resetting all the state mutable by the actor.
     // This includes everything but mailbox and actor ID.
+    #[inline]
     fn reset(&mut self) {
         self.state = ActorState::Starting;
         // TODO: Clean outstanding messages from the mailbox.
